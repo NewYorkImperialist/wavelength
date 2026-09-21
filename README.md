@@ -195,7 +195,35 @@ pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint, including the engine purity boundary
 pnpm check       # all three
 pnpm db:test     # apply the migrations to a throwaway DB and attack them
+pnpm test:api    # play a full game over HTTP against a real database
 ```
+
+### A Supabase-compatible stack without Docker
+
+Supabase's REST API *is* PostgREST, and its anon/service_role "keys" are
+ordinary JWTs naming a Postgres role. So Postgres + PostgREST + a small
+path-rewriting proxy exercises every route handler, grant and RLS policy for
+real, in about 150MB instead of several gigabytes:
+
+```bash
+brew install postgresql@17 postgrest
+brew services start postgresql@17
+pnpm dev:stack          # migrations, keys, PostgREST, proxy, .env.local
+pnpm dev                # in another terminal
+pnpm test:api
+```
+
+`pnpm test:api` runs four players through three complete rounds in four cookie
+jars, asserting every guard: that only the Psychic receives the target and
+everyone else gets a 403 in every phase, that the target appears nowhere in
+public state until the reveal, that refusals leak nothing, that the Psychic
+cannot touch the dial, that the guessing team cannot call left/right, that a
+locked guess cannot be moved, that a clue cannot be rewritten, that teams
+freeze at kickoff, and that a forged cookie is rejected. Scores are re-derived
+independently and compared with what the server stored.
+
+**Realtime is the one thing this cannot cover** — it is a separate service, so
+subscriptions still need a real Supabase project.
 
 `pnpm db:test` needs only a plain PostgreSQL (`brew install postgresql@17 &&
 brew services start postgresql@17`) — a small harness stands in for the
@@ -226,12 +254,14 @@ of a `NEXT_PUBLIC_` prefix is what keeps Next from inlining them into the client
 
 ## Known limitations
 
-**Not yet verified against Supabase itself.** The SQL, grants, RLS policies and
-constraints are exercised by `pnpm db:test` against a real PostgreSQL, but two
-things can only be confirmed on a Supabase project: that PostgREST refuses the
-`private` schema with `PGRST106`, and the actual shape of realtime payloads.
-The multiplayer route handlers and client have not been run against a live
-database at all.
+**Realtime is unverified.** Everything else now runs against a real database —
+the migrations, the grants, the RLS policies, all ten route handlers, and the
+`PGRST106` refusal of the `private` schema, which PostgREST enforces
+identically to Supabase. What remains untested is the realtime layer:
+`postgres_changes` subscriptions, broadcast and presence need Supabase's
+Realtime service, which the local stack does not include. The needle
+broadcast, live phase updates and presence indicators have therefore never
+been observed working.
 
 **No end-to-end browser test yet.** `e2e/no-target-leak.spec.ts` is described in
 the security section as the regression guard for the DOM, network, WebSocket

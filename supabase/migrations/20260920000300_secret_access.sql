@@ -60,8 +60,12 @@ security definer
 set search_path = ''
 as $$
 begin
+  -- target_center is the `dial_position` DOMAIN, not a bare smallint, and
+  -- RETURNS TABLE compares the two strictly — without this cast Postgres
+  -- raises 42804 at call time. (read_round_target avoids it only because
+  -- SELECT INTO casts implicitly on assignment.)
   return query
-    select t.target_center, t.nonce
+    select t.target_center::smallint, t.nonce
       from private.round_targets t
      where t.round_id = p_round_id;
 end;

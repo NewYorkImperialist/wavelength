@@ -51,3 +51,6 @@ playwright-report/
 
 # screenshots
 /shots/
+
+# local stack
+/supabase/local/postgrest.conf

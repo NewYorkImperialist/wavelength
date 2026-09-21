@@ -28,6 +28,17 @@ grant select on
   public.spectrum_cards
 to authenticated;
 
+-- service_role is the only writer. Supabase grants it these by default, but
+-- state them explicitly: the `revoke all ... from anon, authenticated` above is
+-- easy to widen by accident, and a project restored from a dump should not
+-- depend on defaults for the role that runs every mutation.
+grant usage on schema public to service_role;
+grant all privileges on all tables    in schema public to service_role;
+grant all privileges on all sequences in schema public to service_role;
+grant all privileges on all functions in schema public to service_role;
+alter default privileges in schema public grant all on tables    to service_role;
+alter default privileges in schema public grant all on sequences to service_role;
+
 -- No INSERT/UPDATE/DELETE to anyone but service_role. Note there are no write
 -- policies below either, so even a future accidental `grant insert` would hit
 -- RLS default-deny rather than silently opening a hole.

@@ -231,3 +231,18 @@ end; $$;
 
 \echo ''
 \echo 'All security assertions passed.'
+
+-- ===========================================================================
+\echo '--- T13: the set-returning secret accessor actually executes'
+do $$
+declare r record;
+begin
+  -- Regression guard: target_center is a DOMAIN over smallint, and RETURNS
+  -- TABLE compares types strictly. Without an explicit cast this raises 42804
+  -- at call time, which no amount of schema inspection would reveal.
+  select * into r from public.take_round_target('44444444-4444-4444-4444-444444444444'::uuid);
+  if r.target_center <> 1337 then
+    raise exception 'FAIL T13: got % instead of the target', r.target_center;
+  end if;
+  raise notice 'PASS T13: take_round_target returns the target and nonce';
+end; $$;
