@@ -194,7 +194,19 @@ pnpm test        # vitest
 pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint, including the engine purity boundary
 pnpm check       # all three
+pnpm db:test     # apply the migrations to a throwaway DB and attack them
 ```
+
+`pnpm db:test` needs only a plain PostgreSQL (`brew install postgresql@17 &&
+brew services start postgresql@17`) — a small harness stands in for the
+Supabase roles and the realtime publication. It applies every migration, seeds
+the deck, and then runs fourteen adversarial assertions: that no private table
+is published to Realtime, that `rounds.revealed_target` is NULL during play,
+that neither `anon` nor `authenticated` can reach the secret table or the
+`SECURITY DEFINER` functions, that RLS scopes reads to one room, that a token
+with no room claim sees nothing, and that browsers cannot write at all. The
+suite is checked against a deliberate hole to confirm it is not passing
+vacuously.
 
 The engine tests are exhaustive by design — every scoring boundary is pinned, `scoreNeedle(t, t)`
 is checked at all 2001 grid positions, and the state machine is fuzzed to prove it never throws.
@@ -214,4 +226,26 @@ of a `NEXT_PUBLIC_` prefix is what keeps Next from inlining them into the client
 
 ## Known limitations
 
-Recorded as the implementation progresses.
+**Not yet verified against Supabase itself.** The SQL, grants, RLS policies and
+constraints are exercised by `pnpm db:test` against a real PostgreSQL, but two
+things can only be confirmed on a Supabase project: that PostgREST refuses the
+`private` schema with `PGRST106`, and the actual shape of realtime payloads.
+The multiplayer route handlers and client have not been run against a live
+database at all.
+
+**No end-to-end browser test yet.** `e2e/no-target-leak.spec.ts` is described in
+the security section as the regression guard for the DOM, network, WebSocket
+and React-tree channels; it is not written yet.
+
+**Reconnect during the guessing phase is best-effort.** The live needle position
+is intentionally not persisted. It is recovered by peer echo, so if every
+player refreshes at the same moment the needle returns to the dial centre. The
+team simply places it again; the alternative is writing ~20 rows a second.
+
+**Sudden death plays a full pair of turns.** Each team takes exactly one turn per
+sudden-death round, which is the published rule, but it means a round can end
+with the trailing team having had the last word. That is how the physical game
+behaves.
+
+**Spectator mode.** Players without a team are modelled (`team` is nullable) but
+there is no dedicated spectator view.

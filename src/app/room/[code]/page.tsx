@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { serviceClient } from "@/lib/server/db";
+import { isSupabaseConfigured } from "@/lib/server/env";
 import { loadRoomState } from "@/lib/server/roomState";
 import { requireActor } from "@/lib/server/session";
 
@@ -27,6 +28,8 @@ export default async function RoomPage({
   const { code } = await params;
   const normalised = code.toUpperCase();
 
+  if (!isSupabaseConfigured()) return <NotConfigured />;
+
   const { data: room } = await serviceClient()
     .from("rooms")
     .select("id")
@@ -49,4 +52,27 @@ export default async function RoomPage({
 
   if (initial === null) return <JoinPrompt code={normalised} />;
   return <RoomClient initial={initial} />;
+}
+
+function NotConfigured() {
+  return (
+    <main className="flex min-h-dvh items-center justify-center bg-stone-950 px-6">
+      <div className="max-w-md text-center">
+        <h1 className="text-2xl font-bold text-white">Online play isn&apos;t set up</h1>
+        <p className="mt-3 text-stone-400">
+          This deployment has no database configured. Copy{" "}
+          <code className="rounded bg-white/10 px-1.5 py-0.5 text-stone-200">.env.example</code>{" "}
+          to{" "}
+          <code className="rounded bg-white/10 px-1.5 py-0.5 text-stone-200">.env.local</code>{" "}
+          and fill in the Supabase values.
+        </p>
+        <a
+          href="/local"
+          className="mt-6 inline-block rounded-xl bg-white px-6 py-3 font-bold text-stone-900"
+        >
+          Play on one device instead
+        </a>
+      </div>
+    </main>
+  );
 }

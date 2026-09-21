@@ -19,6 +19,18 @@ function required(name: string): string {
   return value;
 }
 
+/**
+ * Whether multiplayer can work at all. The single-device game at /local needs
+ * none of this, so the UI checks here rather than failing with an opaque 500.
+ */
+export function isSupabaseConfigured(): boolean {
+  return (
+    (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "") !== "" &&
+    (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "") !== "" &&
+    (process.env.SUPABASE_JWT_SECRET ?? "") !== ""
+  );
+}
+
 export const serverEnv = {
   get supabaseUrl(): string {
     return required("NEXT_PUBLIC_SUPABASE_URL");
