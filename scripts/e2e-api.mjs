@@ -85,6 +85,18 @@ const noName = await call(makePlayer("X"), "/api/rooms/join", {
 });
 check("a blank name is refused", noName.status === 400, `got ${noName.status}`);
 
+// --- teams ------------------------------------------------------------------
+// Joining seats everyone on one side so small groups can play co-op straight
+// away. This suite exercises the full two-team rules, so split first.
+const notHostSplit = await call(others[0], `/api/rooms/${roomId}/team`, {
+  method: "POST",
+  body: { split: true },
+});
+check("a non-host cannot split the teams", notHostSplit.status === 403, `got ${notHostSplit.status}`);
+
+const split = await call(host, `/api/rooms/${roomId}/team`, { method: "POST", body: { split: true } });
+check("the host splits into two teams", split.status === 200, JSON.stringify(split.body));
+
 // --- starting ---------------------------------------------------------------
 const notHost = await call(others[0], `/api/rooms/${roomId}/start`, { method: "POST" });
 check("a non-host cannot start the game", notHost.status === 403, `got ${notHost.status}`);

@@ -17,7 +17,8 @@ learning anything new.
 
 | | |
 |---|---|
-| **Teams** | Two, alternating turns. |
+| **Players** | Two upward. Four or more can split into teams; smaller groups play co-op. |
+| **Teams** | Two, alternating turns — or everyone on one side in co-op. |
 | **Psychic** | One member of the active team, rotating within the team each round. |
 | **Spectrum** | A card with two opposing concepts — `Underrated` ‹———› `Overrated`. |
 | **Target** | Randomly placed on a 180° dial. Five wedges: **2 \| 3 \| 4 \| 3 \| 2**. |
@@ -41,6 +42,24 @@ The exact angular width of the physical game's wedges was never published. Here 
 `src/lib/game/constants.ts`.
 
 ---
+
+## Co-op
+
+The full game needs four people, because the Psychic's own team does the
+guessing. With one player per team that player would be Psychic *and* the only
+guesser, moving the needle while looking at the target — so literal 1v1 is not
+a game.
+
+Co-op is the published answer and needs no rule invention: everyone on one
+side, one gives the clue, the rest move the needle, and the round goes
+straight from the locked guess to the reveal because there is no opposing team
+to call left or right. Two, three or five players all work.
+
+It is derived from the roster rather than stored as a mode flag, so a game
+cannot end up in a state its player list contradicts. Joining seats everyone
+on one side by default — auto-balancing would leave two players at one apiece,
+the single configuration that cannot be played — and the host can split into
+two teams once there are four.
 
 ## Architecture
 
@@ -207,6 +226,7 @@ pnpm check       # all three
 pnpm db:test     # apply the migrations to a throwaway DB and attack them
 pnpm test:api    # play a full game over HTTP against a real database
 pnpm test:leak   # four real browsers; hunt the target through every channel
+pnpm test:coop   # two real browsers; a full co-op round
 ```
 
 ### A Supabase-compatible stack without Docker

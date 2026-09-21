@@ -76,6 +76,10 @@ const all = [host, ...guests];
 check("four players are in the lobby", true);
 
 // --- start ------------------------------------------------------------------
+// Everyone joins one side by default so pairs can play co-op; this suite wants
+// the full two-team rules, including the left/right call.
+await host.page.getByRole("button", { name: "Split into two teams" }).click();
+await host.page.waitForTimeout(2500);
 await host.page.getByRole("button", { name: "Start game" }).click();
 for (const player of all) {
   await player.page.getByRole("group", { name: /dial/i }).waitFor({ timeout: 20000 });

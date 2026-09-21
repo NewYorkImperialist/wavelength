@@ -17,7 +17,8 @@
     "dev:stack": "./scripts/dev-stack.sh",
     "test:api": "node scripts/e2e-api.mjs",
     "test:leak": "node e2e/no-target-leak.mjs",
-    "build:deploy-sql": "./scripts/build-deploy-sql.sh"
+    "build:deploy-sql": "./scripts/build-deploy-sql.sh",
+    "test:coop": "node e2e/coop.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
