@@ -3,7 +3,13 @@ import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   resolve: {
-    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // `server-only` ships a module that throws outside a React Server
+      // Component. Its job is a build-time guard for Next, which Next still
+      // enforces; under Vitest it just needs to be inert.
+      "server-only": fileURLToPath(new URL("./test/server-only-stub.ts", import.meta.url)),
+    },
   },
   test: {
     globals: true,
