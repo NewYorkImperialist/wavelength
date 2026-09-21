@@ -8,7 +8,7 @@ can scale out, restart or move region without disturbing a game.
 
 ```bash
 fly auth login
-fly launch --no-deploy --copy-config --name wavelength
+fly apps create wave-length --org personal
 ```
 
 `--copy-config` keeps the `fly.toml` in this repo rather than generating a new
@@ -23,14 +23,12 @@ leave the server.
 **Server-only** — set as Fly secrets, encrypted at rest and injected at runtime:
 
 ```bash
-fly secrets set \
-  SUPABASE_SERVICE_ROLE_KEY="..." \
-  SUPABASE_JWT_SECRET="..."
+fly secrets set SUPABASE_SERVICE_ROLE_KEY="..."
 ```
 
-`SUPABASE_JWT_SECRET` is only read if you later reintroduce custom JWTs; the
-current realtime design does not need it. Set it to anything non-empty, or
-leave it out and remove it from `serverEnv`.
+That is the only server secret. Realtime uses broadcast on the anon key and
+the server's change notifications carry no data, so there are no custom tokens
+to sign and no JWT secret to manage.
 
 **Public** — inlined at build time, so they are `--build-arg`, not secrets.
 The anon key is designed to be public: it holds no write grant on any table,
@@ -48,8 +46,8 @@ them on every deploy.
 ## Verifying a deployment
 
 ```bash
-BASE_URL=https://wavelength.fly.dev node scripts/e2e-api.mjs
-BASE_URL=https://wavelength.fly.dev node e2e/no-target-leak.mjs
+BASE_URL=https://wave-length.fly.dev node scripts/e2e-api.mjs
+BASE_URL=https://wave-length.fly.dev node e2e/no-target-leak.mjs
 ```
 
 Both suites take a `BASE_URL`, so the same assertions that guard local
@@ -70,3 +68,10 @@ not just a secret update — those strings are compiled into the JavaScript.
 
 **Region.** Every mutation is a round trip to your Supabase region, and the
 reveal is several. Put the Fly app near the database, not near yourself.
+
+**NEXT_PUBLIC_ values are inlined at BUILD time, by static text substitution.**
+So they must be read as `process.env.NEXT_PUBLIC_SUPABASE_URL` written out in
+full. A computed lookup like `process.env[name]` is not substituted and reads
+as undefined inside the container — while working perfectly in development,
+where `.env.local` populates `process.env` for real. That cost one deploy;
+`src/lib/server/__tests__/env.test.ts` now fails the build if it recurs.

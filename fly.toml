@@ -5,7 +5,7 @@
 # memory. So machines can scale out, restart or move region freely without
 # disturbing a game in progress.
 
-app = "wavelength"
+app = "wave-length"
 primary_region = "iad"
 
 [build]
