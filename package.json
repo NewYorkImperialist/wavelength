@@ -15,7 +15,8 @@
     "db:test": "./scripts/db-test.sh",
     "shots": "node scripts/screenshot.mjs ./shots",
     "dev:stack": "./scripts/dev-stack.sh",
-    "test:api": "node scripts/e2e-api.mjs"
+    "test:api": "node scripts/e2e-api.mjs",
+    "test:leak": "node e2e/no-target-leak.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

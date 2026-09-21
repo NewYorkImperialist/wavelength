@@ -196,6 +196,7 @@ pnpm lint        # eslint, including the engine purity boundary
 pnpm check       # all three
 pnpm db:test     # apply the migrations to a throwaway DB and attack them
 pnpm test:api    # play a full game over HTTP against a real database
+pnpm test:leak   # four real browsers; hunt the target through every channel
 ```
 
 ### A Supabase-compatible stack without Docker
@@ -262,10 +263,6 @@ identically to Supabase. What remains untested is the realtime layer:
 Realtime service, which the local stack does not include. The needle
 broadcast, live phase updates and presence indicators have therefore never
 been observed working.
-
-**No end-to-end browser test yet.** `e2e/no-target-leak.spec.ts` is described in
-the security section as the regression guard for the DOM, network, WebSocket
-and React-tree channels; it is not written yet.
 
 **Reconnect during the guessing phase is best-effort.** The live needle position
 is intentionally not persisted. It is recovered by peer echo, so if every

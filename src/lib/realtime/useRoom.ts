@@ -27,6 +27,19 @@ const NEEDLE_INTERVAL_MS = 1000 / NEEDLE_HZ;
 /** Refresh the room token a few minutes before it lapses. */
 const TOKEN_REFRESH_MARGIN_MS = 3 * 60 * 1000;
 const PEER_ECHO_TIMEOUT_MS = 700;
+/**
+ * How often to poll when realtime is not carrying updates.
+ *
+ * Realtime can be unavailable for ordinary reasons — a blocked WebSocket on a
+ * corporate network, a dropped connection, a self-hosted stack without the
+ * Realtime service. The game must still be playable, just less instant, so
+ * the bootstrap endpoint is polled instead. Phase changes, clues, locks and
+ * scores all arrive; only live needle dragging is lost, and the locked
+ * position is authoritative anyway.
+ */
+const FALLBACK_POLL_MS = 2000;
+/** Once realtime is healthy, poll rarely as a belt-and-braces resync. */
+const HEALTHY_POLL_MS = 30_000;
 
 export interface NeedleState {
   readonly position: number;
@@ -119,7 +132,14 @@ export function useRoom(initial: RoomStateDto): UseRoomResult {
       return () => void supabase.removeChannel(db);
     }
 
-    const teardown = connect();
+    // A realtime failure must not take the room down with it — polling keeps
+    // the game playable, so this is a downgrade, not an error.
+    const teardown = connect().catch((error: unknown) => {
+      console.warn("[wavelength] realtime unavailable, falling back to polling", error);
+      setConnected(false);
+      return undefined;
+    });
+
     return () => {
       cancelled = true;
       if (refreshTimer !== null) clearTimeout(refreshTimer);
@@ -129,7 +149,13 @@ export function useRoom(initial: RoomStateDto): UseRoomResult {
 
   // --- needle broadcast + presence ---------------------------------------
   useEffect(() => {
-    const supabase = browserClient();
+    let supabase;
+    try {
+      supabase = browserClient();
+    } catch {
+      // No Supabase configured at all: the needle simply will not sync live.
+      return;
+    }
     const channel = supabase.channel(`room:${roomId}`, {
       config: { presence: { key: playerId }, broadcast: { self: false } },
     });
@@ -214,6 +240,18 @@ export function useRoom(initial: RoomStateDto): UseRoomResult {
     },
     [needleStore, playerId],
   );
+
+  // Polling fallback. Fast while realtime is down, slow once it is healthy.
+  useEffect(() => {
+    const interval = setInterval(
+      () => {
+        if (document.visibilityState !== "visible") return;
+        void refresh();
+      },
+      connected ? HEALTHY_POLL_MS : FALLBACK_POLL_MS,
+    );
+    return () => clearInterval(interval);
+  }, [connected, refresh]);
 
   // A tab that was backgrounded may have missed messages; resync on return.
   useEffect(() => {

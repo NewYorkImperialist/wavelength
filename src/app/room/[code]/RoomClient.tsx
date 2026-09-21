@@ -115,7 +115,14 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
   const needlePosition = round.needlePosition ?? needle.position;
 
   return (
-    <main className="min-h-dvh bg-stone-950 px-3 py-4 sm:px-6 sm:py-8">
+    <main
+      className="min-h-dvh bg-stone-950 px-3 py-4 sm:px-6 sm:py-8"
+      // Not secret — the round id is in every URL the client already calls.
+      // Exposing it lets the leak test attack the target endpoint exactly as a
+      // cheating player would.
+      data-round-id={round.id}
+      data-room-id={state.room.id}
+    >
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 sm:gap-6">
         <div className="flex items-center justify-between gap-3">
           <p className="font-mono text-sm tracking-widest text-stone-500">
