@@ -496,8 +496,8 @@ export function transition(
 
     case "nominateController": {
       const round = state.round;
+      if (round?.needleLocked === true) return fail(room, "NEEDLE_LOCKED");
       if (state.phase !== "guess" || round === null) return fail(room, "WRONG_PHASE");
-      if (round.needleLocked) return fail(room, "NEEDLE_LOCKED");
       const actor = state.players[action.by];
       if (actor === undefined) return fail(room, "UNKNOWN_PLAYER");
       if (actor.team !== state.activeTeam) return fail(room, "NOT_AUTHORIZED");
@@ -513,8 +513,10 @@ export function transition(
 
     case "moveNeedle": {
       const round = state.round;
+      // Check the lock before the phase: locking advances to "prediction", so
+      // a phase-first check would mask the specific reason with WRONG_PHASE.
+      if (round?.needleLocked === true) return fail(room, "NEEDLE_LOCKED");
       if (state.phase !== "guess" || round === null) return fail(room, "WRONG_PHASE");
-      if (round.needleLocked) return fail(room, "NEEDLE_LOCKED");
       if (action.by !== round.controllerId) return fail(room, "NOT_AUTHORIZED");
       if (!Number.isFinite(action.position)) return fail(room, "INVALID_PAYLOAD");
       return succeed(
@@ -527,8 +529,8 @@ export function transition(
 
     case "lockNeedle": {
       const round = state.round;
+      if (round?.needleLocked === true) return fail(room, "NEEDLE_LOCKED");
       if (state.phase !== "guess" || round === null) return fail(room, "WRONG_PHASE");
-      if (round.needleLocked) return fail(room, "NEEDLE_LOCKED");
       if (action.by !== round.controllerId) return fail(room, "NOT_AUTHORIZED");
       return succeed(
         room,

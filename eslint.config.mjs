@@ -11,6 +11,9 @@ const eslintConfig = defineConfig([
   // reach for React, Next, Supabase or Node built-ins.
   {
     files: ["src/lib/game/**/*.ts"],
+    // The purity tests read the engine source off disk to enforce this very
+    // rule, so they are exempt from it.
+    ignores: ["src/lib/game/__tests__/**"],
     rules: {
       "no-restricted-imports": [
         "error",
