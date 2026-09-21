@@ -244,3 +244,32 @@ describe("pointer control", () => {
     expect(onCommit).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("the reveal centre mark", () => {
+  it("is absent while the target is still hidden from the viewer", () => {
+    render(<WavelengthDial {...baseProps} targetCenter={null} />);
+    expect(screen.queryByTestId("target-centre-mark")).toBeNull();
+  });
+
+  it("is absent for the Psychic before the reveal", () => {
+    // The Psychic sees the band while writing a clue, but the sighting line is
+    // a reveal affordance, not a clue-writing one.
+    render(<WavelengthDial {...baseProps} targetCenter={0.4} markTargetCentre={false} />);
+    expect(screen.queryByTestId("target-centre-mark")).toBeNull();
+  });
+
+  it("appears at the reveal, and the numbers are painted over it", () => {
+    render(<WavelengthDial {...baseProps} targetCenter={0.4} markTargetCentre screenOpen />);
+    const band = screen.getByTestId("target-wedges");
+    const mark = screen.getByTestId("target-centre-mark");
+
+    expect(mark).toBeInTheDocument();
+
+    // Document order is what decides overlap in SVG: every numeral must come
+    // after the mark, or the sighting line would strike through the 4.
+    const children = [...band.children];
+    const markIndex = children.indexOf(mark);
+    const firstLabel = children.findIndex((el) => el.tagName.toLowerCase() === "text");
+    expect(firstLabel).toBeGreaterThan(markIndex);
+  });
+});

@@ -167,6 +167,7 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
             needlePosition={needlePosition}
             targetCenter={targetForDial}
             screenOpen={revealed || (isPsychic && round.phase === "clue")}
+            markTargetCentre={revealed}
             interactive={iHoldTheDial}
             onChange={room.sendNeedle}
             onLock={() =>

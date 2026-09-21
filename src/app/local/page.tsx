@@ -67,6 +67,7 @@ export default function LocalGamePage() {
             needlePosition={round?.needlePosition ?? 0.5}
             targetCenter={targetForDial}
             screenOpen={revealed || psychicMayLook}
+            markTargetCentre={revealed}
             interactive={state.phase === "guess"}
             onChange={(position) => {
               if (round === null) return;

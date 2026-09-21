@@ -31,6 +31,8 @@ export interface WavelengthDialProps {
   targetCenter: Position | null;
   /** Drives the shutters. */
   screenOpen: boolean;
+  /** Mark the exact target centre — only meaningful once revealed. */
+  markTargetCentre?: boolean;
   /** True only for the player currently holding the dial. */
   interactive: boolean;
   /** Fires continuously while dragging, coalesced to one call per frame. */
@@ -47,6 +49,7 @@ export function WavelengthDial({
   needlePosition,
   targetCenter,
   screenOpen,
+  markTargetCentre = false,
   interactive,
   onChange,
   onCommit,
@@ -186,7 +189,9 @@ export function WavelengthDial({
 
       <g clipPath={`url(#${clipId})`}>
         <DialHousing />
-        {targetCenter !== null && <TargetWedges center={targetCenter} />}
+        {targetCenter !== null && (
+          <TargetWedges center={targetCenter} showCentreMark={markTargetCentre} />
+        )}
         <CoverScreen open={screenOpen} />
       </g>
 

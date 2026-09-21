@@ -84,7 +84,7 @@ export function RoundPanels(props: RoundPanelsProps) {
                   ? `Called ${round.prediction} — a bullseye blocks the bonus`
                   : bonus > 0
                     ? `Correctly called ${round.prediction}`
-                    : `Called ${round.prediction} — wrong side`}
+                    : `Called ${round.prediction} — it was the other way`}
             </p>
           </Panel>
         </div>

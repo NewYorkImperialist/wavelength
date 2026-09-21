@@ -1,3 +1,4 @@
+import { trueSide } from "@/lib/game/scoring";
 import type { RoundResult, TeamId } from "@/lib/game/types";
 
 const TEAM_TEXT: Record<TeamId, string> = {
@@ -17,6 +18,7 @@ export function RoundResultPanel({
   const opposing = OPPONENT[result.activeTeam];
   const calledCorrectly = result.opposingTeamPoints > 0;
   const blockedByBullseye = result.activeTeamPoints === 4;
+  const actualSide = trueSide(result.targetCenter, result.needlePosition);
 
   return (
     <div
@@ -54,7 +56,7 @@ export function RoundResultPanel({
               ? `Called ${result.prediction} — but a bullseye blocks the bonus`
               : calledCorrectly
                 ? `Correctly called ${result.prediction}`
-                : `Called ${result.prediction} — wrong side`}
+                : `Called ${result.prediction} — it was ${actualSide ?? "dead on"}`}
         </p>
       </div>
     </div>
