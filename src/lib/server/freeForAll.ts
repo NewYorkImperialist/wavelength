@@ -74,14 +74,15 @@ export async function revealFreeForAll(input: {
     guesses,
   );
 
-  // Claim the reveal first. If this returns nothing, someone beat us to it.
-  const { data: claimed } = await db
+  // Claim the reveal. Zero rows means someone else got there first — but a
+  // database ERROR means the write was rejected, which is a different thing
+  // entirely and must not be swallowed as a lost race. Conflating the two hid
+  // a constraint violation that stopped every round revealing.
+  const { data: claimed, error: claimError } = await db
     .from("rounds")
     .update({
       phase: "reveal",
       revealed_target: target.target_center,
-      active_points: null,
-      opponent_points: null,
       revealed_at: new Date().toISOString(),
     })
     .eq("id", input.roundId)
@@ -89,6 +90,9 @@ export async function revealFreeForAll(input: {
     .select("id")
     .maybeSingle<{ id: string }>();
 
+  if (claimError !== null) {
+    throw new ApiError("SERVER_ERROR", `Could not reveal the round: ${claimError.message}`);
+  }
   if (claimed === null) return { revealed: false };
 
   await Promise.all(

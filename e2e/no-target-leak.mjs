@@ -76,10 +76,6 @@ const all = [host, ...guests];
 check("four players are in the lobby", true);
 
 // --- start ------------------------------------------------------------------
-// Everyone joins one side by default so pairs can play co-op; this suite wants
-// the full two-team rules, including the left/right call.
-await host.page.getByRole("button", { name: "Split into two teams" }).click();
-await host.page.waitForTimeout(2500);
 await host.page.getByRole("button", { name: "Start game" }).click();
 for (const player of all) {
   await player.page.getByRole("group", { name: /dial/i }).waitFor({ timeout: 20000 });
@@ -87,27 +83,11 @@ for (const player of all) {
 check("the game starts for everyone", true);
 
 // --- who is the Psychic? ----------------------------------------------------
-await Promise.all(all.map((p) => p.page.waitForTimeout(2500)));
+await Promise.all(all.map((p) => p.page.waitForTimeout(3000)));
 let psychic = null;
 for (const player of all) {
-  const state = await player.page.evaluate(async () => {
-    const parts = window.location.pathname.split("/");
-    const res = await fetch(`/api/rooms/${parts[2]}/state`).catch(() => null);
-    return res === null ? null : res.json();
-  });
-  player.state = state;
-  if (state?.me?.isPsychic === true) psychic = player;
-}
-// The state endpoint takes the room id, not the code; resolve it from the page.
-if (psychic === null) {
-  for (const player of all) {
-    const isPsychic = await player.page
-      .getByText(/Show me the target|Your clue/i)
-      .count()
-      .then((n) => n > 0)
-      .catch(() => false);
-    if (isPsychic) psychic = player;
-  }
+  const isPsychic = await player.page.getByLabel("Your clue").count().catch(() => 0);
+  if (isPsychic > 0) psychic = player;
 }
 check("exactly one Psychic", psychic !== null, "nobody was shown the clue box");
 if (psychic === null) {

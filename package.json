@@ -18,7 +18,8 @@
     "test:api": "node scripts/e2e-api.mjs",
     "test:leak": "node e2e/no-target-leak.mjs",
     "build:deploy-sql": "./scripts/build-deploy-sql.sh",
-    "test:coop": "node e2e/coop.mjs"
+    "db:push": "./scripts/db-push.sh",
+    "test:ffa": "node e2e/free-for-all.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

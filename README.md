@@ -224,9 +224,10 @@ pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint, including the engine purity boundary
 pnpm check       # all three
 pnpm db:test     # apply the migrations to a throwaway DB and attack them
+pnpm db:push     # apply pending migrations to the real project
 pnpm test:api    # play a full game over HTTP against a real database
 pnpm test:leak   # four real browsers; hunt the target through every channel
-pnpm test:coop   # two real browsers; a full co-op round
+pnpm test:ffa    # four real browsers; a full free-for-all round
 ```
 
 ### A Supabase-compatible stack without Docker
