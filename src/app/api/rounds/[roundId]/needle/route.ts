@@ -6,7 +6,9 @@ import {
   assertController,
   assertNotPsychic,
   assertPhase,
+  otherTeam,
 } from "@/lib/server/guards";
+import { revealAndScore } from "@/lib/server/resolveRound";
 import { loadRoundAndActor } from "@/lib/server/loadRound";
 import { positionToStepsDb } from "@/lib/server/mappers";
 
@@ -73,8 +75,27 @@ export async function POST(
 
       if (error !== null) throw new ApiError("SERVER_ERROR", "Could not lock the needle.");
       if (data === null) throw new ApiError("CONFLICT", "The guess was already locked.");
-      notifyRoom(round.room_id, "needle-locked");
 
+      // Co-op: no opposing team, so nobody can call left or right. Waiting in
+      // `prediction` would hang the round forever — reveal now instead.
+      const { count: opponents } = await db
+        .from("players")
+        .select("id", { count: "exact", head: true })
+        .eq("room_id", round.room_id)
+        .eq("team", otherTeam(round.active_team))
+        .is("left_at", null);
+
+      if ((opponents ?? 0) === 0) {
+        await revealAndScore({
+          roundId,
+          gameId: round.game_id,
+          activeTeam: round.active_team,
+          needleSteps: steps,
+          prediction: null,
+        });
+      }
+
+      notifyRoom(round.room_id, "needle-locked");
       return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
     }
 

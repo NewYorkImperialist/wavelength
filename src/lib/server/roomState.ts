@@ -44,6 +44,8 @@ export interface RoomStateDto {
     suddenDeathIndex: number;
   };
   readonly round: PublicRoundDto | null;
+  /** True when everyone is on one side: no opposing team, no left/right call. */
+  readonly cooperative: boolean;
   readonly serverTimeMs: number;
 }
 
@@ -150,6 +152,9 @@ export async function loadRoomState(actor: Actor): Promise<RoomStateDto> {
             suddenDeathIndex: game.sudden_death_index,
           },
     round,
+    cooperative:
+      (playerRows ?? []).filter((p) => p.team === "a").length === 0 ||
+      (playerRows ?? []).filter((p) => p.team === "b").length === 0,
     // Lets clients run timers without trusting their own clock.
     serverTimeMs: Date.now(),
   };

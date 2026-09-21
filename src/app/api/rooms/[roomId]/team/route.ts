@@ -20,7 +20,57 @@ export async function POST(
     const db = serviceClient();
 
     const body: unknown = await request.json().catch(() => ({}));
-    const { team, playerId } = body as { team?: unknown; playerId?: unknown };
+    const { team, playerId, split } = body as {
+      team?: unknown;
+      playerId?: unknown;
+      split?: unknown;
+    };
+
+    const { data: roomForSplit } = await db
+      .from("rooms")
+      .select("status")
+      .eq("id", roomId)
+      .maybeSingle<{ status: string }>();
+    if (roomForSplit?.status !== "lobby") {
+      throw new ApiError("CONFLICT", "Teams are fixed once the game starts.");
+    }
+
+    // Deal the roster into two sides, keeping join order so the split feels
+    // predictable rather than random.
+    if (split === true) {
+      if (!actor.isHost) throw new ApiError("FORBIDDEN", "Only the host can split the teams.");
+
+      const { data: roster } = await db
+        .from("players")
+        .select("id")
+        .eq("room_id", roomId)
+        .is("left_at", null)
+        .order("created_at", { ascending: true })
+        .returns<{ id: string }[]>();
+
+      const everyone = roster ?? [];
+      if (everyone.length < 4) {
+        throw new ApiError("CONFLICT", "You need four players to split into teams.");
+      }
+
+      const half = Math.ceil(everyone.length / 2);
+      await Promise.all(
+        everyone.map((player, index) =>
+          db
+            .from("players")
+            .update(
+              index < half
+                ? { team: "a", seat_order: index }
+                : { team: "b", seat_order: index - half },
+            )
+            .eq("id", player.id),
+        ),
+      );
+
+      notifyRoom(roomId, "teams-split");
+      return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
+    }
+
     if (team !== "a" && team !== "b") {
       throw new ApiError("BAD_REQUEST", "Pick team a or b.");
     }
@@ -29,15 +79,6 @@ export async function POST(
     const subject = typeof playerId === "string" ? playerId : actor.playerId;
     if (subject !== actor.playerId && !actor.isHost) {
       throw new ApiError("FORBIDDEN", "Only the host can move other players.");
-    }
-
-    const { data: room } = await db
-      .from("rooms")
-      .select("status")
-      .eq("id", roomId)
-      .maybeSingle<{ status: string }>();
-    if (room?.status !== "lobby") {
-      throw new ApiError("CONFLICT", "Teams are fixed once the game starts.");
     }
 
     const { data: last } = await db

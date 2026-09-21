@@ -44,6 +44,7 @@ const Waiting = ({ children }: { children: React.ReactNode }) => (
 
 export function RoundPanels(props: RoundPanelsProps) {
   const { state, round, isPsychic, iAmActive, iHoldTheDial, busy } = props;
+  const coop = state.cooperative;
   const [clue, setClue] = useState("");
 
   const nameOf = (id: string | null): string =>
@@ -58,7 +59,10 @@ export function RoundPanels(props: RoundPanelsProps) {
 
     return (
       <div className="flex flex-col gap-4">
-        <div className="grid gap-3 sm:grid-cols-2" aria-live="polite">
+        <div
+          className={`grid gap-3 ${coop ? "" : "sm:grid-cols-2"}`}
+          aria-live="polite"
+        >
           <Panel>
             <p className="text-sm uppercase tracking-wide text-stone-400">
               {round.activeTeam === "teamA" ? "Team A" : "Team B"}
@@ -74,6 +78,7 @@ export function RoundPanels(props: RoundPanelsProps) {
                   : "Missed the target"}
             </p>
           </Panel>
+          {!coop && (
           <Panel>
             <p className="text-sm uppercase tracking-wide text-stone-400">
               {round.activeTeam === "teamA" ? "Team B" : "Team A"}
@@ -89,6 +94,7 @@ export function RoundPanels(props: RoundPanelsProps) {
                     : `Called ${round.prediction} — it was the other way`}
             </p>
           </Panel>
+          )}
         </div>
 
         {state.game?.winner != null ? (
@@ -204,6 +210,9 @@ export function RoundPanels(props: RoundPanelsProps) {
           needle. Start thinking about left or right.
         </Waiting>
       );
+    }
+    if (coop && isPsychic) {
+      return <Waiting>They&apos;re deciding. Say nothing.</Waiting>;
     }
     return (
       <Panel>

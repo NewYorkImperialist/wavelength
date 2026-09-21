@@ -13,6 +13,7 @@
 
 import {
   MAX_CLUE_LENGTH,
+  MIN_PLAYERS_FOR_COOP,
   MIN_PLAYERS_PER_TEAM_TO_START,
   WINNING_SCORE,
 } from "./constants";
@@ -113,6 +114,16 @@ function connectedCount(state: GameState, team: TeamId): number {
   return state.teams[team].rotation.filter(
     (id) => state.players[id]?.connected === true,
   ).length;
+}
+
+/**
+ * Co-op: everyone on one side, nobody to call left or right.
+ *
+ * Derived from the roster rather than stored as a mode flag, so a game cannot
+ * end up in a state its player list contradicts.
+ */
+export function isCooperative(state: GameState): boolean {
+  return connectedCount(state, OPPONENT[state.activeTeam]) === 0;
 }
 
 export function createInitialRoom(
@@ -425,16 +436,26 @@ export function transition(
     case "startGame": {
       if (state.phase !== "lobby") return fail(room, "WRONG_PHASE");
       if (action.by !== state.hostId) return fail(room, "NOT_AUTHORIZED");
+      // Two playable shapes: two teams that can each field a Psychic and a
+      // guesser, or everyone on one side playing co-op. A team of one is the
+      // only arrangement that cannot work — that player would be Psychic and
+      // sole guesser, moving the needle while looking at the target.
       const minimum = state.config.minPlayersPerTeamToStart;
-      if (
-        connectedCount(state, "teamA") < minimum ||
-        connectedCount(state, "teamB") < minimum
-      ) {
-        return fail(room, "NOT_ENOUGH_PLAYERS");
-      }
+      const a = connectedCount(state, "teamA");
+      const b = connectedCount(state, "teamB");
+      const versus = a >= minimum && b >= minimum;
+      const coop =
+        (a >= MIN_PLAYERS_FOR_COOP && b === 0) || (b >= MIN_PLAYERS_FOR_COOP && a === 0);
+      if (!versus && !coop) return fail(room, "NOT_ENOUGH_PLAYERS");
       return succeed(
         room,
-        bump(state, { phase: "clue", roundNumber: 1, round: null }),
+        bump(state, {
+          phase: "clue",
+          roundNumber: 1,
+          round: null,
+          // Co-op must start on the side that actually has players.
+          activeTeam: b === 0 ? "teamA" : a === 0 ? "teamB" : state.activeTeam,
+        }),
         [{ type: "prepareRound" }],
         null,
       );
@@ -532,12 +553,18 @@ export function transition(
       if (round?.needleLocked === true) return fail(room, "NEEDLE_LOCKED");
       if (state.phase !== "guess" || round === null) return fail(room, "WRONG_PHASE");
       if (action.by !== round.controllerId) return fail(room, "NOT_AUTHORIZED");
+
+      const locked = bump(state, {
+        phase: "prediction",
+        round: { ...round, needleLocked: true },
+      });
+
+      // With nobody to call left or right, waiting in `prediction` would hang
+      // the round forever. Reveal immediately instead.
       return succeed(
         room,
-        bump(state, {
-          phase: "prediction",
-          round: { ...round, needleLocked: true },
-        }),
+        locked,
+        isCooperative(state) ? [{ type: "revealTarget" }] : [],
       );
     }
 
@@ -572,7 +599,8 @@ export function transition(
         room,
         bump(state, {
           phase: "clue",
-          activeTeam: OPPONENT[state.activeTeam],
+          // Co-op keeps playing on the same side; only the Psychic rotates.
+          activeTeam: isCooperative(state) ? state.activeTeam : OPPONENT[state.activeTeam],
           roundNumber: state.roundNumber + 1,
           round: null,
         }),

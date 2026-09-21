@@ -105,6 +105,7 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
           error={error}
           onSwitchTeam={(team) => void call(`/api/rooms/${state.room.id}/team`, { team })}
           onStart={() => void call(`/api/rooms/${state.room.id}/start`)}
+          onSplitTeams={() => void call(`/api/rooms/${state.room.id}/team`, { split: true })}
           onLeave={leave}
         />
       </main>
@@ -156,28 +157,46 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
           </div>
         </div>
 
-        {state.game !== null && (
-          <Scoreboard
-            state={{
-              config: { winningScore: state.room.winningScore, minPlayersPerTeamToStart: 2 },
-              phase: revealed ? "reveal" : "guess",
-              activeTeam: round.activeTeam,
-              teams: {
-                teamA: { id: "teamA", name: "Team A", score: state.game.scoreA, rotation: [], psychicCursor: -1 },
-                teamB: { id: "teamB", name: "Team B", score: state.game.scoreB, rotation: [], psychicCursor: -1 },
-              },
-              version: 0,
-              hostId: state.room.hostPlayerId ?? "",
-              players: {},
-              roundNumber: round.roundNumber,
-              round: null,
-              suddenDeath: null,
-              usedCardIds: [],
-              history: [],
-              winner: state.game.winner,
-            }}
-          />
-        )}
+        {state.game !== null &&
+          (state.cooperative ? (
+            <div
+              className="rounded-xl border border-white/10 bg-white/5 p-4 text-center"
+              data-testid="coop-score"
+            >
+              <p className="text-sm uppercase tracking-widest text-stone-400">
+                Together
+              </p>
+              <p className="mt-1 text-4xl font-bold tabular-nums text-white">
+                {round.activeTeam === "teamA" ? state.game.scoreA : state.game.scoreB}
+                <span className="text-xl font-normal text-stone-500">
+                  {" "}
+                  / {state.room.winningScore}
+                </span>
+              </p>
+              <p className="mt-1 text-sm text-stone-500">Round {round.roundNumber}</p>
+            </div>
+          ) : (
+            <Scoreboard
+              state={{
+                config: { winningScore: state.room.winningScore, minPlayersPerTeamToStart: 2 },
+                phase: revealed ? "reveal" : "guess",
+                activeTeam: round.activeTeam,
+                teams: {
+                  teamA: { id: "teamA", name: "Team A", score: state.game.scoreA, rotation: [], psychicCursor: -1 },
+                  teamB: { id: "teamB", name: "Team B", score: state.game.scoreB, rotation: [], psychicCursor: -1 },
+                },
+                version: 0,
+                hostId: state.room.hostPlayerId ?? "",
+                players: {},
+                roundNumber: round.roundNumber,
+                round: null,
+                suddenDeath: null,
+                usedCardIds: [],
+                history: [],
+                winner: state.game.winner,
+              }}
+            />
+          ))}
 
         {state.game !== null && state.game.suddenDeathIndex > 0 && state.game.winner === null && (
           <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-center text-sm font-semibold text-rose-200">

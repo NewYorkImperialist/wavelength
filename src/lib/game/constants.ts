@@ -105,5 +105,21 @@ export const KEYBOARD_STEP_COARSE = 0.05;
 
 /** First team to reach this ends the game; the higher score wins. */
 export const WINNING_SCORE = 10;
+
+/**
+ * A team needs two people for the round to mean anything: the Psychic knows
+ * where the target is, so somebody else has to move the needle.
+ */
 export const MIN_PLAYERS_PER_TEAM_TO_START = 2;
+
+/**
+ * Co-op needs the same two, just all on one side.
+ *
+ * With no opposing team there is nobody to call left or right, so that phase
+ * is skipped and the round goes straight from the locked guess to the reveal.
+ * Everything else — the clue, the dial, the 2/3/4/3/2 scoring, the Psychic
+ * rotating — is unchanged, which is why this is a real mode of the physical
+ * game rather than a simplification of it.
+ */
+export const MIN_PLAYERS_FOR_COOP = 2;
 export const MAX_CLUE_LENGTH = 120;

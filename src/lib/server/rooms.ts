@@ -145,17 +145,12 @@ export async function joinRoom(codeRaw: unknown, displayNameRaw: unknown): Promi
     throw new ApiError("CONFLICT", "That room is full.");
   }
 
-  // Seat onto the smaller team so lobbies stay roughly even by default.
-  const { data: existing } = await db
-    .from("players")
-    .select("team")
-    .eq("room_id", room.id)
-    .is("left_at", null)
-    .returns<{ team: DbTeam | null }[]>();
-
-  const aCount = (existing ?? []).filter((p) => p.team === "a").length;
-  const bCount = (existing ?? []).filter((p) => p.team === "b").length;
-  const team: DbTeam = aCount <= bCount ? "a" : "b";
+  // Everyone lands on one side by default. A pair or a trio can then start
+  // immediately and play co-op; splitting into two teams is a deliberate
+  // choice once there are four, not something a half-filled lobby falls into
+  // by accident. Auto-balancing instead would leave two players at one
+  // apiece, which is the single configuration that cannot be played.
+  const team: DbTeam = "a";
 
   const player = await insertPlayer(room.id, displayName, team, false);
   await db.from("rooms").update({ last_active_at: new Date().toISOString() }).eq("id", room.id);

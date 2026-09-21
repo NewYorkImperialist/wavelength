@@ -1,4 +1,7 @@
-import { MIN_PLAYERS_PER_TEAM_TO_START } from "@/lib/game/constants";
+import {
+  MIN_PLAYERS_FOR_COOP,
+  MIN_PLAYERS_PER_TEAM_TO_START,
+} from "@/lib/game/constants";
 import { createRound } from "@/lib/server/createRound";
 import { notifyRoom } from "@/lib/server/broadcast";
 import { serviceClient } from "@/lib/server/db";
@@ -33,10 +36,23 @@ export async function POST(
       if (player.team === "a") counts.a++;
       if (player.team === "b") counts.b++;
     }
-    if (counts.a < MIN_PLAYERS_PER_TEAM_TO_START || counts.b < MIN_PLAYERS_PER_TEAM_TO_START) {
+
+    // Two valid shapes. Either both teams can field a Psychic and a guesser,
+    // or everyone is on one side and plays co-op. What is never valid is a
+    // team of one: that player would be Psychic and sole guesser, moving the
+    // needle while looking at the target.
+    const versus =
+      counts.a >= MIN_PLAYERS_PER_TEAM_TO_START && counts.b >= MIN_PLAYERS_PER_TEAM_TO_START;
+    const coop =
+      (counts.a >= MIN_PLAYERS_FOR_COOP && counts.b === 0) ||
+      (counts.b >= MIN_PLAYERS_FOR_COOP && counts.a === 0);
+
+    if (!versus && !coop) {
       throw new ApiError(
         "CONFLICT",
-        `Each team needs at least ${MIN_PLAYERS_PER_TEAM_TO_START} players.`,
+        counts.a + counts.b < MIN_PLAYERS_FOR_COOP
+          ? `You need at least ${MIN_PLAYERS_FOR_COOP} players.`
+          : "Put everyone on one team to play co-op, or at least two on each side.",
       );
     }
 
@@ -53,7 +69,8 @@ export async function POST(
     if (roomError !== null) throw new ApiError("SERVER_ERROR", "Could not start the game.");
     if (room === null) throw new ApiError("CONFLICT", "The game has already started.");
 
-    const startingTeam = Math.random() < 0.5 ? "a" : "b";
+    const startingTeam: "a" | "b" =
+      counts.b === 0 ? "a" : counts.a === 0 ? "b" : Math.random() < 0.5 ? "a" : "b";
     const { data: game, error: gameError } = await db
       .from("games")
       .insert({ room_id: roomId, starting_team: startingTeam })

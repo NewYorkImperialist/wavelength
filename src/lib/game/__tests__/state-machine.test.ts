@@ -620,3 +620,110 @@ describe("defaultControllerId", () => {
     expect(defaultControllerId(room.public, "teamA", "a1")).toBe("a3");
   });
 });
+
+describe("co-op", () => {
+  /** Everyone on one side: a Psychic and a guesser, no opposing team. */
+  function coopRoom(): RoomState {
+    let room = createInitialRoom("a1", "Ada", 0);
+    room = apply(room, {
+      type: "playerJoined", playerId: "a2", name: "Alan", team: "teamA", at: 1,
+    });
+    return apply(room, { type: "startGame", by: "a1" });
+  }
+
+  it("starts with two players on one team", () => {
+    const room = coopRoom();
+    expect(room.public.phase).toBe("clue");
+    expect(room.public.teams.teamB.rotation).toHaveLength(0);
+  });
+
+  it("reveals as soon as the needle locks, with nobody to call left or right", () => {
+    let room = coopRoom();
+    const psychicId = nextPsychicId(room.public, "teamA")!;
+    const controllerId = defaultControllerId(room.public, "teamA", psychicId);
+
+    room = run(room, [
+      { type: "roundPrepared", cardId: "c1", psychicId, controllerId, targetCenter: 0.5 },
+      { type: "submitClue", by: psychicId, clue: "Batman" },
+      { type: "moveNeedle", by: controllerId, position: 0.5 },
+    ]);
+
+    const locked = transition(room, { type: "lockNeedle", by: controllerId });
+    expect(locked.ok).toBe(true);
+    if (!locked.ok) return;
+
+    // The reveal is requested immediately rather than waiting for a call that
+    // is never coming.
+    expect(locked.effects).toContainEqual({ type: "revealTarget" });
+  });
+
+  it("scores the wedge and awards no bonus", () => {
+    let room = coopRoom();
+    const psychicId = nextPsychicId(room.public, "teamA")!;
+    const controllerId = defaultControllerId(room.public, "teamA", psychicId);
+
+    room = run(room, [
+      { type: "roundPrepared", cardId: "c1", psychicId, controllerId, targetCenter: 0.5 },
+      { type: "submitClue", by: psychicId, clue: "Batman" },
+      { type: "moveNeedle", by: controllerId, position: 0.5 },
+      { type: "lockNeedle", by: controllerId },
+      { type: "targetRevealed", targetCenter: 0.5 },
+    ]);
+
+    expect(room.public.round?.result?.activeTeamPoints).toBe(4);
+    expect(room.public.round?.result?.opposingTeamPoints).toBe(0);
+    expect(room.public.teams.teamA.score).toBe(4);
+    expect(room.public.teams.teamB.score).toBe(0);
+  });
+
+  it("does not hand the empty team a bonus for a call nobody made", () => {
+    let room = coopRoom();
+    const psychicId = nextPsychicId(room.public, "teamA")!;
+    const controllerId = defaultControllerId(room.public, "teamA", psychicId);
+
+    room = run(room, [
+      { type: "roundPrepared", cardId: "c1", psychicId, controllerId, targetCenter: 0.9 },
+      { type: "submitClue", by: psychicId, clue: "Batman" },
+      { type: "moveNeedle", by: controllerId, position: 0.2 },
+      { type: "lockNeedle", by: controllerId },
+      { type: "targetRevealed", targetCenter: 0.9 },
+    ]);
+
+    // A wild miss, and still nothing for the side with no players on it.
+    expect(room.public.round?.result?.activeTeamPoints).toBe(0);
+    expect(room.public.teams.teamB.score).toBe(0);
+  });
+
+  it("keeps the same side active and rotates the Psychic", () => {
+    let room = coopRoom();
+    const first = nextPsychicId(room.public, "teamA")!;
+    const controllerId = defaultControllerId(room.public, "teamA", first);
+
+    room = run(room, [
+      { type: "roundPrepared", cardId: "c1", psychicId: first, controllerId, targetCenter: 0.5 },
+      { type: "submitClue", by: first, clue: "Batman" },
+      { type: "moveNeedle", by: controllerId, position: 0.5 },
+      { type: "lockNeedle", by: controllerId },
+      { type: "targetRevealed", targetCenter: 0.5 },
+      { type: "acknowledgeReveal", by: "a1" },
+    ]);
+
+    expect(room.public.activeTeam).toBe("teamA");
+    expect(nextPsychicId(room.public, "teamA")).not.toBe(first);
+  });
+
+  it("is not treated as co-op once both sides have players", () => {
+    const room = started();
+    const locked = run(room, [
+      { type: "roundPrepared", cardId: "c1", psychicId: "a1", controllerId: "a2", targetCenter: 0.5 },
+      { type: "submitClue", by: "a1", clue: "Batman" },
+    ]);
+    const result = transition(locked, { type: "lockNeedle", by: "a2" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // With opponents present the round must wait for their call.
+    expect(result.effects).toEqual([]);
+    expect(result.state.public.phase).toBe("prediction");
+  });
+});

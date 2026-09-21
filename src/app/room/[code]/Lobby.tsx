@@ -1,6 +1,9 @@
 "use client";
 
-import { MIN_PLAYERS_PER_TEAM_TO_START } from "@/lib/game/constants";
+import {
+  MIN_PLAYERS_FOR_COOP,
+  MIN_PLAYERS_PER_TEAM_TO_START,
+} from "@/lib/game/constants";
 import type { RoomStateDto } from "@/lib/server/roomState";
 
 const TEAM_STYLE = {
@@ -14,6 +17,7 @@ export function Lobby({
   onSwitchTeam,
   onStart,
   onLeave,
+  onSplitTeams,
   busy,
   error,
 }: {
@@ -22,6 +26,7 @@ export function Lobby({
   onSwitchTeam: (team: "a" | "b") => void;
   onStart: () => void;
   onLeave: () => void;
+  onSplitTeams: () => void;
   busy: boolean;
   error: string | null;
 }) {
@@ -29,9 +34,28 @@ export function Lobby({
     teamA: state.players.filter((p) => p.team === "teamA").length,
     teamB: state.players.filter((p) => p.team === "teamB").length,
   };
-  const canStart =
+  const total = counts.teamA + counts.teamB;
+
+  // Two playable shapes: two teams that can each field a Psychic and a
+  // guesser, or everyone on one side playing co-op. A team of one is the only
+  // arrangement that cannot work — that player would be Psychic and sole
+  // guesser, moving the needle while looking at the target.
+  const versus =
     counts.teamA >= MIN_PLAYERS_PER_TEAM_TO_START &&
     counts.teamB >= MIN_PLAYERS_PER_TEAM_TO_START;
+  const coop =
+    (counts.teamA >= MIN_PLAYERS_FOR_COOP && counts.teamB === 0) ||
+    (counts.teamB >= MIN_PLAYERS_FOR_COOP && counts.teamA === 0);
+  const canStart = versus || coop;
+  const canSplit = total >= 2 * MIN_PLAYERS_PER_TEAM_TO_START;
+
+  const explanation = versus
+    ? "Two teams. You'll guess your own Psychic's clues, and call left or right on theirs."
+    : coop
+      ? `Co-op — all ${total} of you on one side. One gives the clue, the rest move the needle. No left or right call.`
+      : total < MIN_PLAYERS_FOR_COOP
+        ? `Waiting for ${MIN_PLAYERS_FOR_COOP - total} more player${MIN_PLAYERS_FOR_COOP - total === 1 ? "" : "s"}…`
+        : "A team of one can't play — that person would be the Psychic and the only guesser. Put everyone together for co-op, or two on each side.";
 
   return (
     <div className="mx-auto w-full max-w-2xl">
@@ -103,21 +127,32 @@ export function Lobby({
         })}
       </div>
 
+      <p
+        className={`mt-5 text-center text-sm ${canStart ? "text-stone-400" : "text-amber-300/80"}`}
+        aria-live="polite"
+      >
+        {explanation}
+      </p>
+
       {state.me.isHost ? (
         <>
+          {canSplit && counts.teamB === 0 && (
+            <button
+              type="button"
+              onClick={onSplitTeams}
+              className="mt-4 w-full rounded-xl border border-white/20 px-6 py-3 font-semibold text-stone-200 hover:bg-white/10"
+            >
+              Split into two teams
+            </button>
+          )}
           <button
             type="button"
             onClick={onStart}
             disabled={!canStart || busy}
-            className="mt-6 w-full rounded-xl bg-white px-6 py-4 text-lg font-bold text-stone-900 disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-3 w-full rounded-xl bg-white px-6 py-4 text-lg font-bold text-stone-900 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {busy ? "Starting…" : "Start game"}
+            {busy ? "Starting…" : coop ? "Start co-op game" : "Start game"}
           </button>
-          {!canStart && (
-            <p className="mt-2 text-center text-sm text-stone-500">
-              Each team needs at least {MIN_PLAYERS_PER_TEAM_TO_START} players.
-            </p>
-          )}
         </>
       ) : (
         <p className="mt-6 text-center text-stone-400">

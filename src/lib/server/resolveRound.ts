@@ -32,7 +32,8 @@ export interface ResolveInput {
   readonly gameId: string;
   readonly activeTeam: DbTeam;
   readonly needleSteps: number;
-  readonly prediction: Side;
+  /** Null in co-op: there is no opposing team to call left or right. */
+  readonly prediction: Side | null;
   readonly winningScore?: number;
 }
 
