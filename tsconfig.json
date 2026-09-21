@@ -15,6 +15,9 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // scripts/*.mts run under node --experimental-strip-types, which requires
+    // explicit .ts specifiers.
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "jsx": "react-jsx",
     "incremental": true,
