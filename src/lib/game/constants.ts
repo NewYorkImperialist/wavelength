@@ -45,14 +45,18 @@ export const PIVOT = { x: 500, y: 500 } as const;
 export const RADII = {
   rimOuter: 478,
   rimInner: 462,
-  /** The cover screen is an annulus over the scoring band. */
-  screenOuter: 462,
-  screenInner: 286,
-  /** The 2/3/4/3/2 target band. */
-  bandOuter: 452,
-  bandInner: 300,
   tickOuter: 462,
   tickInner: 440,
+  /**
+   * The cover screen sits *inside* the tick ring, so the scale stays readable
+   * while the target is hidden — as on the physical device, where the screen
+   * covers the scoring area but not the dial's edge.
+   */
+  screenOuter: 436,
+  screenInner: 286,
+  /** The 2/3/4/3/2 target band, fully within the screen's reach. */
+  bandOuter: 430,
+  bandInner: 300,
   needleTip: 448,
   /** Negative: the needle extends past the pivot, so it balances visually. */
   needleTail: -70,

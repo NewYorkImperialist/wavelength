@@ -139,8 +139,8 @@ describe("describeArcSegment", () => {
   const d = describeArcSegment(0.3, 0.7, RADII.bandInner, RADII.bandOuter);
 
   it("sweeps the outer arc clockwise and the inner arc back", () => {
-    expect(d).toContain("A 452 452 0 0 1");
-    expect(d).toContain("A 300 300 0 0 0");
+    expect(d).toContain(`A ${RADII.bandOuter} ${RADII.bandOuter} 0 0 1`);
+    expect(d).toContain(`A ${RADII.bandInner} ${RADII.bandInner} 0 0 0`);
     expect(d.endsWith("Z")).toBe(true);
   });
 
@@ -152,12 +152,13 @@ describe("describeArcSegment", () => {
 
   it("puts a full-width band at the dial's edges", () => {
     const full = describeArcSegment(0, 1, RADII.bandInner, RADII.bandOuter);
-    expect(full).toContain("M 48 500");
-    expect(full).toContain("952 500");
+    // Derived from the constants so a radius change doesn't silently rot this.
+    expect(full).toContain(`M ${PIVOT.x - RADII.bandOuter} ${PIVOT.y}`);
+    expect(full).toContain(`${PIVOT.x + RADII.bandOuter} ${PIVOT.y}`);
   });
 
   it("is order-insensitive", () => {
-    expect(describeArcSegment(0.7, 0.3, 300, 452)).toBe(d);
+    expect(describeArcSegment(0.7, 0.3, RADII.bandInner, RADII.bandOuter)).toBe(d);
   });
 
   it("never emits NaN or exponential notation", () => {
