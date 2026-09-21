@@ -1,0 +1,41 @@
+# Fly.io deployment for Wavelength.
+#
+# The server is stateless — every bit of game state lives in Supabase, and
+# change notifications go through Supabase Realtime rather than in-process
+# memory. So machines can scale out, restart or move region freely without
+# disturbing a game in progress.
+
+app = "wavelength"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+  [build.args]
+    # Inlined into the client bundle at build time. Neither is secret: the anon
+    # key is designed to be public and holds no write grant on any table.
+    # Set these with: fly deploy --build-arg NEXT_PUBLIC_SUPABASE_URL=...
+    NEXT_PUBLIC_SUPABASE_URL = ""
+    NEXT_PUBLIC_SUPABASE_ANON_KEY = ""
+
+[env]
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Session cookies are Secure in production, so HTTPS is not optional.
+
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  # Keep one machine warm: a party game is opened by several people at once,
+  # and a cold start on the first click is the worst possible first impression.
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -54,3 +54,6 @@ playwright-report/
 
 # local stack
 /supabase/local/postgrest.conf
+
+# fly
+.fly/

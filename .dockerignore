@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env
+.env.local
+shots/
+coverage/
+test-results/
+playwright-report/
+e2e/
+scripts/screenshot.mjs
+supabase/local/
+*.log
