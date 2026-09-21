@@ -153,7 +153,7 @@ for (const player of others) {
   const wedges = await page.getByTestId("target-wedges").count();
   check(`${player.name}: the target band is not rendered at all`, wedges === 0);
 
-  const denied = await page.evaluate(async (t) => {
+  const denied = await page.evaluate(async () => {
     const roundId = document.querySelector("[data-round-id]")?.getAttribute("data-round-id");
     if (roundId === null || roundId === undefined) return "no-round-id";
     const res = await fetch(`/api/rounds/${roundId}/target`);
