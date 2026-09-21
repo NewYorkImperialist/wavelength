@@ -1,3 +1,4 @@
+import { notifyRoom } from "@/lib/server/broadcast";
 import { handleRoute } from "@/lib/server/errors";
 import { joinRoom } from "@/lib/server/rooms";
 import { setSessionCookie } from "@/lib/server/session";
@@ -13,6 +14,8 @@ export async function POST(request: Request): Promise<Response> {
 
     const result = await joinRoom(code, displayName);
     await setSessionCookie(result.roomId, result.token);
+
+    notifyRoom(result.roomId, "player-joined");
 
     return Response.json(
       { roomId: result.roomId, code: result.code, playerId: result.playerId },

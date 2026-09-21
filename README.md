@@ -148,9 +148,19 @@ Split by frequency, because the needle is the only high-rate thing in the game:
 
 | What | Mechanism |
 |---|---|
-| Phase, clue, needle lock, prediction, reveal, scores, roster | `postgres_changes` — durable, ordered, RLS-checked |
-| Needle dragging (~20 Hz) | `broadcast` — **zero database writes** |
+| Anything changed | `broadcast` — a bare ping from the server, carrying **no data** |
+| Needle dragging (~20 Hz) | `broadcast`, client to client — **zero database writes** |
 | Who is connected | `presence` |
+
+A change notification carries no game state at all: clients react by
+re-fetching `/api/rooms/:id/state`, which is the single place that decides what
+a given player may see. A ping cannot leak; a row payload can.
+
+This deliberately avoids `postgres_changes`, which would require every browser
+to hold a token whose claims satisfy the RLS policies — meaning custom JWTs
+signed with the project's JWT secret, plus refresh handling. Since the client
+never reads Supabase directly, that machinery bought nothing, and it does not
+work at all on projects using asymmetric signing keys.
 
 A refreshing player rebuilds everything from one endpoint, `GET /api/rooms/:id/state`. The
 Psychic re-fetches the target on mount, as many times as needed, until the reveal. The in-flight
@@ -255,14 +265,14 @@ of a `NEXT_PUBLIC_` prefix is what keeps Next from inlining them into the client
 
 ## Known limitations
 
-**Realtime is unverified.** Everything else now runs against a real database —
-the migrations, the grants, the RLS policies, all ten route handlers, and the
-`PGRST106` refusal of the `private` schema, which PostgREST enforces
-identically to Supabase. What remains untested is the realtime layer:
-`postgres_changes` subscriptions, broadcast and presence need Supabase's
-Realtime service, which the local stack does not include. The needle
-broadcast, live phase updates and presence indicators have therefore never
-been observed working.
+**The engine is faithful; the social rules are not enforced.** The Psychic is
+asked not to gesture or use the words on the dial, but nothing stops them.
+That is true of the physical game too.
+
+**Polling is the floor, not the ceiling.** If realtime is unavailable — a
+blocked WebSocket, a dropped connection, a project without it — the room falls
+back to polling every 2s and stays fully playable. Only live needle dragging
+is lost, and the locked position was always the authoritative one.
 
 **Reconnect during the guessing phase is best-effort.** The live needle position
 is intentionally not persisted. It is recovered by peer echo, so if every

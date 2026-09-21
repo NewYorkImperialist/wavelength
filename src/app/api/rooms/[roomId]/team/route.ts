@@ -1,4 +1,5 @@
 import { serviceClient } from "@/lib/server/db";
+import { notifyRoom } from "@/lib/server/broadcast";
 import { ApiError, handleRoute } from "@/lib/server/errors";
 import { requireActor } from "@/lib/server/session";
 
@@ -55,6 +56,7 @@ export async function POST(
       .eq("room_id", roomId);
 
     if (error !== null) throw new ApiError("SERVER_ERROR", "Could not switch teams.");
+    notifyRoom(roomId, "team-changed");
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   });
 }

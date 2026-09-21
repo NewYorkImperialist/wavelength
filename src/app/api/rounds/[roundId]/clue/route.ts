@@ -1,5 +1,6 @@
 import { MAX_CLUE_LENGTH } from "@/lib/game/constants";
 import { serviceClient } from "@/lib/server/db";
+import { notifyRoom } from "@/lib/server/broadcast";
 import { ApiError, handleRoute } from "@/lib/server/errors";
 import { assertPhase, assertPsychic } from "@/lib/server/guards";
 import { loadRoundAndActor } from "@/lib/server/loadRound";
@@ -43,6 +44,7 @@ export async function POST(
     if (error !== null) throw new ApiError("SERVER_ERROR", "Could not save the clue.");
     if (data === null) throw new ApiError("CONFLICT", "The clue was already given.");
 
+    notifyRoom(round.room_id, "clue");
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   });
 }

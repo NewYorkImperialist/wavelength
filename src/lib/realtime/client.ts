@@ -3,11 +3,13 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * The browser's Supabase client.
+ * The browser's Supabase client, used for realtime only.
  *
- * Read-only in practice: `anon` and `authenticated` hold no write grant on any
- * table, so every mutation goes through a route handler instead. This client
- * exists for realtime subscriptions and for reading the caller's own room.
+ * It never reads a table. All state comes from `/api/rooms/:id/state`, which
+ * is the single place that decides what a given player may see. That is why
+ * the plain anon key is enough here: there is nothing to authorize beyond
+ * joining a channel whose name is an unguessable room id, and the messages on
+ * it carry no game data.
  */
 
 let client: SupabaseClient | null = null;
@@ -26,23 +28,4 @@ export function browserClient(): SupabaseClient {
     realtime: { params: { eventsPerSecond: 30 } },
   });
   return client;
-}
-
-export interface RealtimeToken {
-  readonly token: string;
-  readonly expiresAt: number;
-}
-
-/** Swap the anon identity for the room-scoped token RLS actually reads. */
-export async function authenticateForRoom(roomId: string): Promise<RealtimeToken> {
-  const response = await fetch(
-    `/api/session/realtime-token?roomId=${encodeURIComponent(roomId)}`,
-    { cache: "no-store" },
-  );
-  if (!response.ok) throw new Error("Could not authenticate for this room.");
-
-  const token = (await response.json()) as RealtimeToken;
-  const supabase = browserClient();
-  supabase.realtime.setAuth(token.token);
-  return token;
 }

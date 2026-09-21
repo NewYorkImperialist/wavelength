@@ -1,4 +1,5 @@
 import { createRound } from "@/lib/server/createRound";
+import { notifyRoom } from "@/lib/server/broadcast";
 import { serviceClient } from "@/lib/server/db";
 import { ApiError, handleRoute } from "@/lib/server/errors";
 import { otherTeam, type DbTeam } from "@/lib/server/guards";
@@ -61,6 +62,8 @@ export async function POST(
     });
 
     await db.from("rooms").update({ last_active_at: new Date().toISOString() }).eq("id", roomId);
+
+    notifyRoom(roomId, "next-round");
 
     return Response.json(
       { roundId },

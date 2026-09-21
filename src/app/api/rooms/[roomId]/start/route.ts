@@ -1,5 +1,6 @@
 import { MIN_PLAYERS_PER_TEAM_TO_START } from "@/lib/game/constants";
 import { createRound } from "@/lib/server/createRound";
+import { notifyRoom } from "@/lib/server/broadcast";
 import { serviceClient } from "@/lib/server/db";
 import { ApiError, handleRoute } from "@/lib/server/errors";
 import { assertHost } from "@/lib/server/guards";
@@ -69,6 +70,8 @@ export async function POST(
       roundNumber: 1,
       activeTeam: startingTeam,
     });
+
+    notifyRoom(roomId, "game-started");
 
     return Response.json(
       { gameId: game.id, roundId },

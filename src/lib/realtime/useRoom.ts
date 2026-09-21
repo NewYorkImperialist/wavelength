@@ -6,26 +6,30 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { RoomStateDto } from "@/lib/server/roomState";
 import { quantizePosition } from "@/lib/game/geometry";
 
-import { authenticateForRoom, browserClient } from "./client";
+import { browserClient } from "./client";
 import { createStore, useStore, type Store } from "./store";
 
 /**
- * Realtime, split by how often each thing changes.
+ * Realtime, on one channel, carrying three kinds of message.
  *
- *   postgres_changes  durable state — phase, clue, lock, prediction, reveal,
- *                     scores, roster. Ordered, RLS-checked, and it *is* the
- *                     state, so there is no second copy to keep in sync.
- *   broadcast         the needle while it is being dragged. No database write
- *                     at all; persisting 20 rows a second would be WAL churn
- *                     for data that is worthless a frame later.
- *   presence          who is connected. Cleans itself up when a socket drops,
- *                     so no server-side reaper is needed.
+ *   changed      a bare ping from the server after any mutation. No data:
+ *                clients react by re-fetching the bootstrap endpoint, which
+ *                is the single place that decides what a player may see.
+ *   needle:move  the dial while it is being dragged, client to client, at
+ *                20Hz with no database write. Persisting 20 rows a second
+ *                would be WAL churn for values worthless a frame later.
+ *   presence     who is connected. Cleans itself up when a socket drops, so
+ *                no server-side reaper is needed.
+ *
+ * Deliberately NOT postgres_changes. Those require the browser to hold a
+ * token whose claims satisfy the RLS policies, which means minting and
+ * refreshing custom JWTs signed with the project's JWT secret. Since the
+ * client never reads Supabase directly, that machinery bought nothing — and
+ * a bare ping cannot leak, where a row payload can.
  */
 
 const NEEDLE_HZ = 20;
 const NEEDLE_INTERVAL_MS = 1000 / NEEDLE_HZ;
-/** Refresh the room token a few minutes before it lapses. */
-const TOKEN_REFRESH_MARGIN_MS = 3 * 60 * 1000;
 const PEER_ECHO_TIMEOUT_MS = 700;
 /**
  * How often to poll when realtime is not carrying updates.
@@ -38,8 +42,15 @@ const PEER_ECHO_TIMEOUT_MS = 700;
  * position is authoritative anyway.
  */
 const FALLBACK_POLL_MS = 2000;
-/** Once realtime is healthy, poll rarely as a belt-and-braces resync. */
-const HEALTHY_POLL_MS = 30_000;
+/**
+ * Only once realtime has actually *delivered* something do we back off.
+ *
+ * A subscription reporting SUBSCRIBED is not the same as one delivering
+ * changes: a channel can join happily and still carry nothing, which leaves a
+ * player watching a stale lobby while everyone else has moved on. So the
+ * trigger for slowing down is a received message, not a connection status.
+ */
+const HEALTHY_POLL_MS = 15_000;
 
 export interface NeedleState {
   readonly position: number;
@@ -50,7 +61,10 @@ export interface NeedleState {
 
 export interface UseRoomResult {
   readonly state: RoomStateDto;
+  /** The socket is up. Does NOT imply changes are arriving — see `delivering`. */
   readonly connected: boolean;
+  /** A realtime change has actually been received at least once. */
+  readonly delivering: boolean;
   readonly onlinePlayerIds: ReadonlySet<string>;
   readonly needleStore: Store<NeedleState>;
   readonly refresh: () => Promise<void>;
@@ -60,6 +74,8 @@ export interface UseRoomResult {
 export function useRoom(initial: RoomStateDto): UseRoomResult {
   const [state, setState] = useState<RoomStateDto>(initial);
   const [connected, setConnected] = useState(false);
+  /** Set the first time a realtime change actually arrives. */
+  const [delivering, setDelivering] = useState(false);
   const [onlinePlayerIds, setOnline] = useState<ReadonlySet<string>>(new Set());
 
   const roomId = initial.room.id;
@@ -89,65 +105,7 @@ export function useRoom(initial: RoomStateDto): UseRoomResult {
     setState((await response.json()) as RoomStateDto);
   }, [roomId]);
 
-  // --- durable state ------------------------------------------------------
-  useEffect(() => {
-    let cancelled = false;
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-
-    async function connect() {
-      const token = await authenticateForRoom(roomId);
-      if (cancelled) return;
-
-      const supabase = browserClient();
-      const db = supabase
-        .channel(`db:room:${roomId}`)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "rounds", filter: `room_id=eq.${roomId}` },
-          () => void refresh(),
-        )
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "players", filter: `room_id=eq.${roomId}` },
-          () => void refresh(),
-        )
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "games", filter: `room_id=eq.${roomId}` },
-          () => void refresh(),
-        )
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "rooms", filter: `id=eq.${roomId}` },
-          () => void refresh(),
-        )
-        .subscribe((status) => setConnected(status === "SUBSCRIBED"));
-
-      // Re-mint before expiry; otherwise reads start 401ing mid-game.
-      refreshTimer = setTimeout(
-        () => void connect(),
-        Math.max(30_000, token.expiresAt - Date.now() - TOKEN_REFRESH_MARGIN_MS),
-      );
-
-      return () => void supabase.removeChannel(db);
-    }
-
-    // A realtime failure must not take the room down with it — polling keeps
-    // the game playable, so this is a downgrade, not an error.
-    const teardown = connect().catch((error: unknown) => {
-      console.warn("[wavelength] realtime unavailable, falling back to polling", error);
-      setConnected(false);
-      return undefined;
-    });
-
-    return () => {
-      cancelled = true;
-      if (refreshTimer !== null) clearTimeout(refreshTimer);
-      void teardown.then((fn) => fn?.());
-    };
-  }, [roomId, refresh]);
-
-  // --- needle broadcast + presence ---------------------------------------
+  // --- one channel: change pings, the needle, and presence ----------------
   useEffect(() => {
     let supabase;
     try {
@@ -161,6 +119,10 @@ export function useRoom(initial: RoomStateDto): UseRoomResult {
     });
 
     channel
+      .on("broadcast", { event: "changed" }, () => {
+        setDelivering(true);
+        void refresh();
+      })
       .on("broadcast", { event: "needle:move" }, ({ payload }) => {
         const move = payload as NeedleState;
         // Drop anything older than what we've already applied.
@@ -181,6 +143,7 @@ export function useRoom(initial: RoomStateDto): UseRoomResult {
         setOnline(new Set(Object.keys(channel.presenceState())));
       })
       .subscribe((status) => {
+        setConnected(status === "SUBSCRIBED");
         if (status !== "SUBSCRIBED") return;
         void channel.track({ playerId, at: Date.now() });
         // Ask peers where the needle is; fall back to the dial centre.
@@ -201,7 +164,7 @@ export function useRoom(initial: RoomStateDto): UseRoomResult {
       channelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [roomId, playerId, needleStore]);
+  }, [roomId, playerId, needleStore, refresh]);
 
   /** Apply locally every frame; put it on the wire at most 20 times a second. */
   const sendNeedle = useCallback(
@@ -248,10 +211,10 @@ export function useRoom(initial: RoomStateDto): UseRoomResult {
         if (document.visibilityState !== "visible") return;
         void refresh();
       },
-      connected ? HEALTHY_POLL_MS : FALLBACK_POLL_MS,
+      delivering ? HEALTHY_POLL_MS : FALLBACK_POLL_MS,
     );
     return () => clearInterval(interval);
-  }, [connected, refresh]);
+  }, [delivering, refresh]);
 
   // A tab that was backgrounded may have missed messages; resync on return.
   useEffect(() => {
@@ -262,7 +225,7 @@ export function useRoom(initial: RoomStateDto): UseRoomResult {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refresh]);
 
-  return { state, connected, onlinePlayerIds, needleStore, refresh, sendNeedle };
+  return { state, connected, delivering, onlinePlayerIds, needleStore, refresh, sendNeedle };
 }
 
 export { useStore };

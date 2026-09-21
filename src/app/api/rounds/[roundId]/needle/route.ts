@@ -1,3 +1,4 @@
+import { notifyRoom } from "@/lib/server/broadcast";
 import { serviceClient } from "@/lib/server/db";
 import { ApiError, handleRoute } from "@/lib/server/errors";
 import {
@@ -45,6 +46,7 @@ export async function POST(
         .eq("id", roundId)
         .eq("phase", "guess");
       if (error !== null) throw new ApiError("SERVER_ERROR", "Could not take the dial.");
+      notifyRoom(round.room_id, "needle-controller");
       return Response.json({ ok: true, controllerId: actor.playerId });
     }
 
@@ -71,6 +73,7 @@ export async function POST(
 
       if (error !== null) throw new ApiError("SERVER_ERROR", "Could not lock the needle.");
       if (data === null) throw new ApiError("CONFLICT", "The guess was already locked.");
+      notifyRoom(round.room_id, "needle-locked");
 
       return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
     }

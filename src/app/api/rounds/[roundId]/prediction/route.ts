@@ -1,3 +1,4 @@
+import { notifyRoom } from "@/lib/server/broadcast";
 import { serviceClient } from "@/lib/server/db";
 import { ApiError, handleRoute } from "@/lib/server/errors";
 import { assertOpposingTeam, assertPhase } from "@/lib/server/guards";
@@ -63,6 +64,8 @@ export async function POST(
       needleSteps: claimed.needle_position,
       prediction: side,
     });
+
+    notifyRoom(round.room_id, "revealed");
 
     return Response.json(
       {
