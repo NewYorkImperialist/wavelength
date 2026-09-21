@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { WavelengthDial } from "@/components/dial/WavelengthDial";
@@ -11,6 +12,7 @@ import { Lobby } from "./Lobby";
 import { RoundPanels } from "./RoundPanels";
 
 export function RoomClient({ initial }: { initial: RoomStateDto }) {
+  const router = useRouter();
   const room = useRoom(initial);
   const { state } = room;
 
@@ -86,6 +88,12 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
     };
   }, [roundId, isPsychic, phase]);
 
+  const leave = () => {
+    void call(`/api/rooms/${state.room.id}/leave`).then((ok) => {
+      if (ok) router.push("/");
+    });
+  };
+
   // --- lobby --------------------------------------------------------------
   if (state.room.status === "lobby" || state.round === null) {
     return (
@@ -97,6 +105,7 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
           error={error}
           onSwitchTeam={(team) => void call(`/api/rooms/${state.room.id}/team`, { team })}
           onStart={() => void call(`/api/rooms/${state.room.id}/start`)}
+          onLeave={leave}
         />
       </main>
     );
@@ -128,14 +137,23 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
           <p className="font-mono text-sm tracking-widest text-stone-500">
             {state.room.code}
           </p>
-          <p className="text-xs text-stone-500">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={leave}
+              className="text-xs text-stone-500 underline underline-offset-4 hover:text-stone-300"
+            >
+              Leave
+            </button>
+            <p className="text-xs text-stone-500">
             <span
               className={`mr-1.5 inline-block h-2 w-2 rounded-full align-middle ${
                 room.connected ? "bg-emerald-400" : "bg-amber-400"
               }`}
             />
             {room.connected ? "Connected" : "Reconnecting…"}
-          </p>
+            </p>
+          </div>
         </div>
 
         {state.game !== null && (
@@ -210,6 +228,8 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
           }
           onPredict={(side) => void call(`/api/rounds/${round.id}/prediction`, { side })}
           onNextRound={() => void call(`/api/rooms/${state.room.id}/next-round`)}
+          onRestart={() => void call(`/api/rooms/${state.room.id}/restart`)}
+          isHost={state.me.isHost}
         />
 
         {error !== null && (

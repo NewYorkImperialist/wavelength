@@ -13,6 +13,7 @@ export function Lobby({
   online,
   onSwitchTeam,
   onStart,
+  onLeave,
   busy,
   error,
 }: {
@@ -20,6 +21,7 @@ export function Lobby({
   online: ReadonlySet<string>;
   onSwitchTeam: (team: "a" | "b") => void;
   onStart: () => void;
+  onLeave: () => void;
   busy: boolean;
   error: string | null;
 }) {
@@ -128,6 +130,14 @@ export function Lobby({
           {error}
         </p>
       )}
+
+      <button
+        type="button"
+        onClick={onLeave}
+        className="mx-auto mt-6 block text-sm text-stone-500 underline underline-offset-4 hover:text-stone-300"
+      >
+        Leave this room
+      </button>
     </div>
   );
 }

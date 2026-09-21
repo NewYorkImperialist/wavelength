@@ -24,6 +24,8 @@ export interface RoundPanelsProps {
   onLock: () => void;
   onPredict: (side: "left" | "right") => void;
   onNextRound: () => void;
+  onRestart: () => void;
+  isHost: boolean;
 }
 
 const Panel = ({ children }: { children: React.ReactNode }) => (
@@ -98,6 +100,36 @@ export function RoundPanels(props: RoundPanelsProps) {
             <p className="mt-2 text-stone-400">
               Team A {state.game.scoreA} &middot; Team B {state.game.scoreB}
             </p>
+
+            <ul className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-stone-400">
+              {state.players.map((player) => (
+                <li key={player.id}>
+                  <span
+                    className={
+                      player.team === "teamA" ? "text-sky-300" : "text-amber-300"
+                    }
+                  >
+                    &bull;
+                  </span>{" "}
+                  {player.displayName}
+                </li>
+              ))}
+            </ul>
+
+            {props.isHost ? (
+              <button
+                type="button"
+                onClick={props.onRestart}
+                disabled={busy}
+                className="mt-5 rounded-xl bg-white px-6 py-3 font-bold text-stone-900 hover:opacity-90 disabled:opacity-40"
+              >
+                Play again
+              </button>
+            ) : (
+              <p className="mt-5 text-sm text-stone-500">
+                Waiting for the host to start another game…
+              </p>
+            )}
           </Panel>
         ) : (
           <button
