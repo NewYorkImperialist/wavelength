@@ -14,6 +14,7 @@ import { clamp01, describeArcSegment, quantizePosition, type Position } from "@/
 import { pointerToPosition } from "@/lib/dial/pointer";
 
 import { CoverScreen } from "./CoverScreen";
+import { GuessMarkers, type GuessMarker } from "./GuessMarkers";
 import { DialHousing } from "./DialHousing";
 import { DialHub, Needle } from "./Needle";
 import { SpectrumLabels } from "./SpectrumLabels";
@@ -33,6 +34,11 @@ export interface WavelengthDialProps {
   screenOpen: boolean;
   /** Mark the exact target centre — only meaningful once revealed. */
   markTargetCentre?: boolean;
+  /**
+   * Everyone's committed needles, drawn at the reveal. When present the
+   * single needle is hidden: the markers are the result.
+   */
+  guesses?: readonly GuessMarker[];
   /** True only for the player currently holding the dial. */
   interactive: boolean;
   /** Fires continuously while dragging, coalesced to one call per frame. */
@@ -50,6 +56,7 @@ export function WavelengthDial({
   targetCenter,
   screenOpen,
   markTargetCentre = false,
+  guesses,
   interactive,
   onChange,
   onCommit,
@@ -196,13 +203,17 @@ export function WavelengthDial({
       </g>
 
       {/* Outside the clip so the needle's tail can cross the baseline. */}
-      <Needle
-        position={needlePosition}
-        interactive={interactive}
-        leftLabel={leftLabel}
-        rightLabel={rightLabel}
-        onKeyDown={handleKeyDown}
-      />
+      {guesses !== undefined && guesses.length > 0 ? (
+        <GuessMarkers guesses={guesses} />
+      ) : (
+        <Needle
+          position={needlePosition}
+          interactive={interactive}
+          leftLabel={leftLabel}
+          rightLabel={rightLabel}
+          onKeyDown={handleKeyDown}
+        />
+      )}
       <DialHub />
       <SpectrumLabels left={leftLabel} right={rightLabel} />
     </svg>

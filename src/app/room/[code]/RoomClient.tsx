@@ -1,15 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { WavelengthDial } from "@/components/dial/WavelengthDial";
-import { Scoreboard } from "@/components/game/Scoreboard";
+import type { GuessMarker } from "@/components/dial/GuessMarkers";
+import { Leaderboard, type LeaderboardRow } from "@/components/game/Leaderboard";
 import type { RoomStateDto } from "@/lib/server/roomState";
 import { useRoom, useStore } from "@/lib/realtime/useRoom";
 
 import { Lobby } from "./Lobby";
-import { RoundPanels } from "./RoundPanels";
+import { RoundPanel } from "./RoundPanel";
 
 export function RoomClient({ initial }: { initial: RoomStateDto }) {
   const router = useRouter();
@@ -18,6 +19,12 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Where this player's own needle sits before they commit. Tagged with its
+   * round so a new round starts at the centre without an effect resetting it
+   * — which would be a cascading render for something derivable.
+   */
+  const [needle, setNeedle] = useState<{ roundId: string; position: number } | null>(null);
 
   /**
    * The Psychic's copy of the target.
@@ -25,12 +32,13 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
    * Fetched HERE, in a client component after hydration — never during SSR,
    * because RSC output is serialised into the page HTML and the secret would
    * end up in the document. Held in component state rather than the shared
-   * store so it never appears in anything a devtools panel enumerates.
+   * store so it never appears in anything devtools enumerates, and tagged
+   * with its round so a stale one can never be shown against a new one.
    */
   const [target, setTarget] = useState<{ roundId: string; value: number } | null>(null);
   const fetchedFor = useRef<string | null>(null);
 
-  const needle = useStore(room.needleStore);
+  useStore(room.needleStore);
 
   const call = useCallback(
     async (url: string, body?: unknown): Promise<boolean> => {
@@ -63,12 +71,7 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
   const isPsychic = state.me.isPsychic;
   const phase = state.round?.phase ?? null;
 
-  // Re-fetches on reconnect and on refresh, which is what makes a mid-round
-  // reload safe for the Psychic.
   useEffect(() => {
-    // Nothing to do unless this viewer is the Psychic of a live round. The
-    // stored target is tagged with its round, so a stale one is filtered out
-    // when rendering rather than cleared with a setState from here.
     if (roundId === null || !isPsychic) return;
     if (phase === "reveal" || phase === "complete") return;
     if (fetchedFor.current === roundId) return;
@@ -94,7 +97,11 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
     });
   };
 
-  // --- lobby --------------------------------------------------------------
+  const colourIndexOf = useMemo(() => {
+    const order = new Map(state.players.map((player, index) => [player.id, index]));
+    return (playerId: string) => order.get(playerId) ?? 0;
+  }, [state.players]);
+
   if (state.room.status === "lobby" || state.round === null) {
     return (
       <main className="min-h-dvh bg-stone-950 px-4 py-8">
@@ -103,9 +110,7 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
           online={room.onlinePlayerIds}
           busy={busy}
           error={error}
-          onSwitchTeam={(team) => void call(`/api/rooms/${state.room.id}/team`, { team })}
           onStart={() => void call(`/api/rooms/${state.room.id}/start`)}
-          onSplitTeams={() => void call(`/api/rooms/${state.room.id}/team`, { split: true })}
           onLeave={leave}
         />
       </main>
@@ -113,23 +118,48 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
   }
 
   const round = state.round;
+  const myNeedle = needle?.roundId === round.id ? needle.position : 0.5;
   const revealed = round.revealedTarget !== null;
-  const iAmActive = state.me.team === round.activeTeam;
-  const iHoldTheDial =
-    round.needleControllerId === state.me.playerId && round.phase === "guess";
+  const iHaveGuessed = state.guesses.some((g) => g.playerId === state.me.playerId);
+  const canGuess = round.phase === "guess" && !isPsychic && !iHaveGuessed && !revealed;
 
-  // The dial is only handed a target when this viewer is entitled to one.
-  const myTarget = target?.roundId === round.id ? target.value : null;
-  const targetForDial = revealed ? round.revealedTarget : isPsychic ? myTarget : null;
-  // Locked position wins once it exists; before that, the live broadcast.
-  const needlePosition = round.needlePosition ?? needle.position;
+  const targetForDial = revealed
+    ? round.revealedTarget
+    : isPsychic && target?.roundId === round.id
+      ? target.value
+      : null;
+
+  const markers: GuessMarker[] = revealed
+    ? state.guesses
+        .filter((guess) => guess.position >= 0)
+        .map((guess) => ({
+          playerId: guess.playerId,
+          name: state.players.find((p) => p.id === guess.playerId)?.displayName ?? "?",
+          position: guess.position,
+          points: guess.points,
+          isMe: guess.playerId === state.me.playerId,
+        }))
+    : [];
+
+  const rows: LeaderboardRow[] = state.players.map((player) => {
+    const guess = state.guesses.find((g) => g.playerId === player.id);
+    return {
+      playerId: player.id,
+      name: player.displayName,
+      score: player.score,
+      isPsychic: player.id === round.psychicPlayerId,
+      isMe: player.id === state.me.playerId,
+      hasGuessed: guess !== undefined,
+      roundPoints: guess?.points ?? null,
+      colourIndex: colourIndexOf(player.id),
+    };
+  });
+
+  const winner = state.players.find((p) => p.score >= state.room.winningScore);
 
   return (
     <main
       className="min-h-dvh bg-stone-950 px-3 py-4 sm:px-6 sm:py-8"
-      // Not secret — the round id is in every URL the client already calls.
-      // Exposing it lets the leak test attack the target endpoint exactly as a
-      // cheating player would.
       data-round-id={round.id}
       data-room-id={state.room.id}
     >
@@ -147,108 +177,63 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
               Leave
             </button>
             <p className="text-xs text-stone-500">
-            <span
-              className={`mr-1.5 inline-block h-2 w-2 rounded-full align-middle ${
-                room.connected ? "bg-emerald-400" : "bg-amber-400"
-              }`}
-            />
-            {room.connected ? "Connected" : "Reconnecting…"}
+              <span
+                className={`mr-1.5 inline-block h-2 w-2 rounded-full align-middle ${
+                  room.connected ? "bg-emerald-400" : "bg-amber-400"
+                }`}
+              />
+              Round {round.roundNumber}
             </p>
           </div>
         </div>
-
-        {state.game !== null &&
-          (state.cooperative ? (
-            <div
-              className="rounded-xl border border-white/10 bg-white/5 p-4 text-center"
-              data-testid="coop-score"
-            >
-              <p className="text-sm uppercase tracking-widest text-stone-400">
-                Together
-              </p>
-              <p className="mt-1 text-4xl font-bold tabular-nums text-white">
-                {round.activeTeam === "teamA" ? state.game.scoreA : state.game.scoreB}
-                <span className="text-xl font-normal text-stone-500">
-                  {" "}
-                  / {state.room.winningScore}
-                </span>
-              </p>
-              <p className="mt-1 text-sm text-stone-500">Round {round.roundNumber}</p>
-            </div>
-          ) : (
-            <Scoreboard
-              state={{
-                config: { winningScore: state.room.winningScore, minPlayersPerTeamToStart: 2 },
-                phase: revealed ? "reveal" : "guess",
-                activeTeam: round.activeTeam,
-                teams: {
-                  teamA: { id: "teamA", name: "Team A", score: state.game.scoreA, rotation: [], psychicCursor: -1 },
-                  teamB: { id: "teamB", name: "Team B", score: state.game.scoreB, rotation: [], psychicCursor: -1 },
-                },
-                version: 0,
-                hostId: state.room.hostPlayerId ?? "",
-                players: {},
-                roundNumber: round.roundNumber,
-                round: null,
-                suddenDeath: null,
-                usedCardIds: [],
-                history: [],
-                winner: state.game.winner,
-              }}
-            />
-          ))}
-
-        {state.game !== null && state.game.suddenDeathIndex > 0 && state.game.winner === null && (
-          <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-center text-sm font-semibold text-rose-200">
-            Sudden death, round {state.game.suddenDeathIndex} — most points this round wins
-          </p>
-        )}
 
         <div className="rounded-2xl bg-stone-900/60 p-2 sm:p-4">
           <WavelengthDial
             leftLabel={round.card.left}
             rightLabel={round.card.right}
-            needlePosition={needlePosition}
+            needlePosition={myNeedle}
             targetCenter={targetForDial}
-            screenOpen={revealed || (isPsychic && round.phase === "clue")}
             markTargetCentre={revealed}
-            interactive={iHoldTheDial}
-            onChange={room.sendNeedle}
-            onLock={() =>
-              void call(`/api/rounds/${round.id}/needle`, {
-                action: "lock",
-                position: room.needleStore.get().position,
-              })
-            }
+            guesses={markers}
+            screenOpen={revealed || (isPsychic && round.phase === "clue")}
+            interactive={canGuess}
+            onChange={(position) => {
+              setNeedle({ roundId: round.id, position });
+              room.sendNeedle(position);
+            }}
+            onLock={() => {
+              if (canGuess) void call(`/api/rounds/${round.id}/guess`, { position: myNeedle });
+            }}
           />
         </div>
 
-        {round.clue !== null && !revealed && (
+        {round.clue !== null && (
           <p className="text-center text-2xl font-bold text-white sm:text-3xl">
             &ldquo;{round.clue}&rdquo;
           </p>
         )}
 
-        <RoundPanels
+        <RoundPanel
           state={state}
           round={round}
           isPsychic={isPsychic}
-          iAmActive={iAmActive}
-          iHoldTheDial={iHoldTheDial}
-          needlePosition={needlePosition}
+          iHaveGuessed={iHaveGuessed}
+          canGuess={canGuess}
+          revealed={revealed}
+          winner={winner ?? null}
           busy={busy}
+          myNeedle={myNeedle}
           onSubmitClue={(clue) => void call(`/api/rounds/${round.id}/clue`, { clue })}
-          onClaimDial={() => void call(`/api/rounds/${round.id}/needle`, { action: "claim" })}
-          onLock={() =>
-            void call(`/api/rounds/${round.id}/needle`, {
-              action: "lock",
-              position: room.needleStore.get().position,
-            })
-          }
-          onPredict={(side) => void call(`/api/rounds/${round.id}/prediction`, { side })}
+          onLockGuess={() => void call(`/api/rounds/${round.id}/guess`, { position: myNeedle })}
+          onForceReveal={() => void call(`/api/rounds/${round.id}/force-reveal`)}
           onNextRound={() => void call(`/api/rooms/${state.room.id}/next-round`)}
           onRestart={() => void call(`/api/rooms/${state.room.id}/restart`)}
-          isHost={state.me.isHost}
+        />
+
+        <Leaderboard
+          rows={rows}
+          target={state.room.winningScore}
+          showRoundPoints={revealed}
         />
 
         {error !== null && (

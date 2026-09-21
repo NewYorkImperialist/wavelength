@@ -2,7 +2,13 @@ import "server-only";
 
 import { serviceClient } from "./db";
 import { ApiError } from "./errors";
-import { toPublicRound, teamIdOf, type PublicRoundDto, type RoundRowFull } from "./mappers";
+import {
+  stepsToPosition,
+  teamIdOf,
+  toPublicRound,
+  type PublicRoundDto,
+  type RoundRowFull,
+} from "./mappers";
 import type { Actor } from "./session";
 
 /**
@@ -34,6 +40,17 @@ export interface RoomStateDto {
     team: "teamA" | "teamB" | null;
     seatOrder: number;
     isHost: boolean;
+    score: number;
+  }>;
+  /**
+   * Committed guesses for the current round. `points` is null until the
+   * reveal. Guesses are not secret — seeing where everyone landed is the
+   * whole payoff — and the target itself lives elsewhere entirely.
+   */
+  readonly guesses: ReadonlyArray<{
+    playerId: string;
+    position: number;
+    points: number | null;
   }>;
   readonly game: null | {
     id: string;
@@ -69,12 +86,19 @@ export async function loadRoomState(actor: Actor): Promise<RoomStateDto> {
 
   const { data: playerRows } = await db
     .from("players")
-    .select("id, display_name, team, seat_order, is_host")
+    .select("id, display_name, team, seat_order, is_host, score")
     .eq("room_id", actor.roomId)
     .is("left_at", null)
     .order("seat_order", { ascending: true })
     .returns<
-      { id: string; display_name: string; team: "a" | "b" | null; seat_order: number; is_host: boolean }[]
+      {
+        id: string;
+        display_name: string;
+        team: "a" | "b" | null;
+        seat_order: number;
+        is_host: boolean;
+        score: number;
+      }[]
     >();
 
   const { data: game } = await db
@@ -94,6 +118,7 @@ export async function loadRoomState(actor: Actor): Promise<RoomStateDto> {
     }>();
 
   let round: PublicRoundDto | null = null;
+  let guesses: RoomStateDto["guesses"] = [];
   if (game?.current_round_id != null) {
     const { data: roundRow } = await db
       .from("rounds")
@@ -114,6 +139,21 @@ export async function loadRoomState(actor: Actor): Promise<RoomStateDto> {
         roundRow,
         card ?? { id: roundRow.card_id, left_label: "", right_label: "" },
       );
+
+      const { data: guessRows } = await db
+        .from("round_guesses")
+        .select("player_id, position, points")
+        .eq("round_id", roundRow.id)
+        .returns<{ player_id: string; position: number; points: number | null }[]>();
+
+      guesses = (guessRows ?? []).map((row) => ({
+        playerId: row.player_id,
+        // Before the reveal, publish only WHO has locked in — not where.
+        // Otherwise a late guesser could read everyone else's answer and
+        // simply average it.
+        position: roundRow.revealed_target === null ? -1 : stepsToPosition(row.position),
+        points: row.points,
+      }));
     }
   }
 
@@ -139,6 +179,7 @@ export async function loadRoomState(actor: Actor): Promise<RoomStateDto> {
       team: p.team === null ? null : teamIdOf(p.team),
       seatOrder: p.seat_order,
       isHost: p.is_host,
+      score: p.score,
     })),
     game:
       game == null
@@ -152,6 +193,7 @@ export async function loadRoomState(actor: Actor): Promise<RoomStateDto> {
             suddenDeathIndex: game.sudden_death_index,
           },
     round,
+    guesses,
     cooperative:
       (playerRows ?? []).filter((p) => p.team === "a").length === 0 ||
       (playerRows ?? []).filter((p) => p.team === "b").length === 0,

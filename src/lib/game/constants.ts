@@ -71,14 +71,22 @@ export const RADII = {
 // are the only thing to change when retuning difficulty after playtesting.
 // ---------------------------------------------------------------------------
 
-/** Half-widths from the target centre, in grid steps. Integers, deliberately. */
+/**
+ * Half-widths from the target centre, in grid steps. Integers, deliberately.
+ *
+ * The target spans 25% of the dial as five equal 5% bands. That is wider than
+ * the printed game, chosen after play: with everyone guessing individually
+ * there is no team to talk each other closer, so the original 12.5% made
+ * scoring anything feel rare. These three integers are the only thing to
+ * change to retune it.
+ */
 export const TARGET_HALF_STEPS = {
-  /** The 4-point wedge: centre +/- 25 steps = 2.5% of the dial. */
-  four: 25,
+  /** The 4-point wedge: centre +/- 50 steps = 5% of the dial. */
+  four: 50,
   /** Outer edge of the 3-point wedges. */
-  three: 75,
+  three: 150,
   /** Outer edge of the 2-point wedges, i.e. the edge of the target. */
-  two: 125,
+  two: 250,
 } as const;
 
 /** The same half-widths as normalized positions. Derived, never hardcoded. */
@@ -117,9 +125,20 @@ export const MIN_PLAYERS_PER_TEAM_TO_START = 2;
  *
  * With no opposing team there is nobody to call left or right, so that phase
  * is skipped and the round goes straight from the locked guess to the reveal.
- * Everything else — the clue, the dial, the 2/3/4/3/2 scoring, the Psychic
- * rotating — is unchanged, which is why this is a real mode of the physical
- * game rather than a simplification of it.
  */
 export const MIN_PLAYERS_FOR_COOP = 2;
+
+/**
+ * Free-for-all: no teams, everyone places their own needle.
+ *
+ * Needs two people for the same reason every mode does — the Psychic knows
+ * where the target is, so somebody else has to guess.
+ */
+export const MIN_PLAYERS_FOR_FREE_FOR_ALL = 2;
+
+/**
+ * Everyone scores every round in free-for-all, so points accumulate much
+ * faster than in the team game and the finish line has to move accordingly.
+ */
+export const FREE_FOR_ALL_WINNING_SCORE = 25;
 export const MAX_CLUE_LENGTH = 120;

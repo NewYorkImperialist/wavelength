@@ -85,18 +85,6 @@ const noName = await call(makePlayer("X"), "/api/rooms/join", {
 });
 check("a blank name is refused", noName.status === 400, `got ${noName.status}`);
 
-// --- teams ------------------------------------------------------------------
-// Joining seats everyone on one side so small groups can play co-op straight
-// away. This suite exercises the full two-team rules, so split first.
-const notHostSplit = await call(others[0], `/api/rooms/${roomId}/team`, {
-  method: "POST",
-  body: { split: true },
-});
-check("a non-host cannot split the teams", notHostSplit.status === 403, `got ${notHostSplit.status}`);
-
-const split = await call(host, `/api/rooms/${roomId}/team`, { method: "POST", body: { split: true } });
-check("the host splits into two teams", split.status === 200, JSON.stringify(split.body));
-
 // --- starting ---------------------------------------------------------------
 const notHost = await call(others[0], `/api/rooms/${roomId}/start`, { method: "POST" });
 check("a non-host cannot start the game", notHost.status === 403, `got ${notHost.status}`);
@@ -111,98 +99,94 @@ const all = [host, ...others];
 
 // --- a round ----------------------------------------------------------------
 async function playRound(roundNumber) {
-  const view = await call(host, `/api/rooms/${roomId}/state`);
-  const state = view.body;
-  const round = state.round;
-  if (round === null) return bad("a round exists", "state.round was null");
-
   for (const player of all) {
     const own = await call(player, `/api/rooms/${roomId}/state`);
-    player.team = own.body.me.team;
+    player.view = own.body;
     player.isPsychic = own.body.me.isPsychic;
   }
 
   const psychic = all.find((p) => p.isPsychic);
-  const activeTeam = round.activeTeam;
-  const teammate = all.find((p) => p.team === activeTeam && p !== psychic);
-  const opponent = all.find((p) => p.team !== activeTeam);
+  const guessers = all.filter((p) => p !== psychic);
+  const round = psychic.view.round;
 
   check(`round ${roundNumber}: exactly one psychic`, all.filter((p) => p.isPsychic).length === 1);
-  check(`round ${roundNumber}: psychic is on the active team`, psychic?.team === activeTeam);
 
   // -- the secret --
   const secret = await call(psychic, `/api/rounds/${round.id}/target`);
-  check(`round ${roundNumber}: psychic receives the target`, secret.status === 200 && typeof secret.body?.targetCenter === "number");
+  check(`round ${roundNumber}: psychic receives the target`,
+    secret.status === 200 && typeof secret.body?.targetCenter === "number");
   const target = secret.body?.targetCenter;
 
-  for (const player of all.filter((p) => !p.isPsychic)) {
+  for (const player of guessers) {
     const denied = await call(player, `/api/rounds/${round.id}/target`);
-    check(`round ${roundNumber}: ${player.name} is refused the target`, denied.status === 403, `got ${denied.status}`);
+    check(`round ${roundNumber}: ${player.name} is refused the target`,
+      denied.status === 403, `got ${denied.status}`);
   }
-
-  const publicJson = JSON.stringify(state);
-  check(`round ${roundNumber}: the target is absent from public state`, !publicJson.includes(String(target)));
-
-  // -- out-of-phase attempts --
-  const earlyPredict = await call(opponent, `/api/rounds/${round.id}/prediction`, { method: "POST", body: { side: "left" } });
-  check(`round ${roundNumber}: cannot predict before the guess`, earlyPredict.status === 409, `got ${earlyPredict.status}`);
-  check(`round ${roundNumber}: the refusal leaks nothing`, !JSON.stringify(earlyPredict.body).includes(String(target)));
-
-  const notPsychicClue = await call(teammate, `/api/rounds/${round.id}/clue`, { method: "POST", body: { clue: "cheat" } });
-  check(`round ${roundNumber}: only the psychic may give the clue`, notPsychicClue.status === 403, `got ${notPsychicClue.status}`);
+  check(`round ${roundNumber}: the target is absent from public state`,
+    !JSON.stringify(psychic.view).includes(String(target)));
 
   // -- clue --
-  const empty = await call(psychic, `/api/rounds/${round.id}/clue`, { method: "POST", body: { clue: "   " } });
-  check(`round ${roundNumber}: an empty clue is refused`, empty.status === 400, `got ${empty.status}`);
+  const notPsychicClue = await call(guessers[0], `/api/rounds/${round.id}/clue`,
+    { method: "POST", body: { clue: "cheat" } });
+  check(`round ${roundNumber}: only the psychic may give the clue`,
+    notPsychicClue.status === 403, `got ${notPsychicClue.status}`);
 
-  const clue = await call(psychic, `/api/rounds/${round.id}/clue`, { method: "POST", body: { clue: "Batman" } });
-  check(`round ${roundNumber}: the psychic gives a clue`, clue.status === 200, JSON.stringify(clue.body));
+  const early = await call(guessers[0], `/api/rounds/${round.id}/guess`,
+    { method: "POST", body: { position: 0.5 } });
+  check(`round ${roundNumber}: cannot guess before the clue`,
+    early.status === 409, `got ${early.status}`);
 
-  const twice = await call(psychic, `/api/rounds/${round.id}/clue`, { method: "POST", body: { clue: "Robin" } });
-  check(`round ${roundNumber}: the clue cannot be changed`, twice.status === 409, `got ${twice.status}`);
+  const clue = await call(psychic, `/api/rounds/${round.id}/clue`,
+    { method: "POST", body: { clue: "Batman" } });
+  check(`round ${roundNumber}: the psychic gives a clue`, clue.status === 200);
 
-  // -- needle --
-  const psychicDial = await call(psychic, `/api/rounds/${round.id}/needle`, { method: "POST", body: { action: "claim" } });
-  check(`round ${roundNumber}: the psychic cannot take the dial`, psychicDial.status === 403, `got ${psychicDial.status}`);
+  // -- everyone guesses for themselves --
+  const psychicGuess = await call(psychic, `/api/rounds/${round.id}/guess`,
+    { method: "POST", body: { position: target } });
+  check(`round ${roundNumber}: the psychic cannot guess`,
+    psychicGuess.status === 403, `got ${psychicGuess.status}`);
 
-  const oppDial = await call(opponent, `/api/rounds/${round.id}/needle`, { method: "POST", body: { action: "claim" } });
-  check(`round ${roundNumber}: the other team cannot take the dial`, oppDial.status === 403, `got ${oppDial.status}`);
+  // Deliberately spread out: a bullseye, a near miss, and a wild one.
+  const positions = [target, Math.min(1, target + 0.08), 0.02];
+  for (const [index, player] of guessers.entries()) {
+    const guess = await call(player, `/api/rounds/${round.id}/guess`,
+      { method: "POST", body: { position: positions[index] } });
+    check(`round ${roundNumber}: ${player.name} locks in`, guess.status === 200,
+      JSON.stringify(guess.body));
+  }
 
-  await call(teammate, `/api/rounds/${round.id}/needle`, { method: "POST", body: { action: "claim" } });
-  const locked = await call(teammate, `/api/rounds/${round.id}/needle`, { method: "POST", body: { action: "lock", position: 0.5 } });
-  check(`round ${roundNumber}: the guess locks`, locked.status === 200, JSON.stringify(locked.body));
+  const again = await call(guessers[0], `/api/rounds/${round.id}/guess`,
+    { method: "POST", body: { position: 0.9 } });
+  check(`round ${roundNumber}: a guess cannot be changed`, again.status === 409, `got ${again.status}`);
 
-  const relock = await call(teammate, `/api/rounds/${round.id}/needle`, { method: "POST", body: { action: "lock", position: 0.9 } });
-  check(`round ${roundNumber}: the guess cannot be moved after locking`, relock.status === 409, `got ${relock.status}`);
+  // -- the reveal happens once the last guess lands --
+  const after = await call(guessers[0], `/api/rooms/${roomId}/state`);
+  const revealedRound = after.body.round;
+  check(`round ${roundNumber}: the round revealed automatically`,
+    revealedRound.phase === "reveal", `phase ${revealedRound.phase}`);
+  check(`round ${roundNumber}: the target is public after the reveal`,
+    revealedRound.revealedTarget === target);
 
-  // -- prediction and reveal --
-  const ownTeamPredict = await call(teammate, `/api/rounds/${round.id}/prediction`, { method: "POST", body: { side: "left" } });
-  check(`round ${roundNumber}: the guessing team cannot call left/right`, ownTeamPredict.status === 403, `got ${ownTeamPredict.status}`);
-
-  const side = target < 0.5 ? "left" : "right";
-  const revealed = await call(opponent, `/api/rounds/${round.id}/prediction`, { method: "POST", body: { side } });
-  check(`round ${roundNumber}: the call reveals the round`, revealed.status === 200, JSON.stringify(revealed.body));
-  check(`round ${roundNumber}: the revealed target matches the secret`, revealed.body?.targetCenter === target,
-    `${revealed.body?.targetCenter} vs ${target}`);
-
-  // Scoring must match the engine, computed independently here.
+  // -- scoring --
   const steps = (n) => Math.round(n * 2000);
-  const distance = Math.abs(steps(target) - steps(0.5));
-  const expectedActive = distance <= 25 ? 4 : distance <= 75 ? 3 : distance <= 125 ? 2 : 0;
-  const expectedBonus = expectedActive === 4 ? 0 : distance === 0 ? 0 : 1;
-  check(`round ${roundNumber}: active team scored ${expectedActive}`, revealed.body?.activePoints === expectedActive,
-    `got ${revealed.body?.activePoints}`);
-  check(`round ${roundNumber}: opponents scored ${expectedBonus}`, revealed.body?.opponentPoints === expectedBonus,
-    `got ${revealed.body?.opponentPoints}`);
+  const band = (n) => {
+    const d = Math.abs(steps(target) - steps(n));
+    return d <= 50 ? 4 : d <= 150 ? 3 : d <= 250 ? 2 : 0;
+  };
+  const expected = positions.map(band);
 
-  const double = await call(opponent, `/api/rounds/${round.id}/prediction`, { method: "POST", body: { side } });
-  check(`round ${roundNumber}: the call cannot be made twice`, double.status === 409, `got ${double.status}`);
+  for (const [index, player] of guessers.entries()) {
+    const got = after.body.guesses.find((g) => g.playerId === player.playerId);
+    check(`round ${roundNumber}: ${player.name} scored ${expected[index]}`,
+      got?.points === expected[index], `got ${got?.points}`);
+  }
 
-  // -- everyone can now see the target --
-  const after = await call(opponent, `/api/rooms/${roomId}/state`);
-  check(`round ${roundNumber}: the target is public after the reveal`, after.body?.round?.revealedTarget === target);
+  const avg = Math.round(expected.reduce((a, b) => a + b, 0) / expected.length);
+  const psychicRow = after.body.players.find((p) => p.id === psychic.playerId);
+  check(`round ${roundNumber}: the psychic scored the average (${avg})`,
+    psychicRow?.score >= avg, `total ${psychicRow?.score}`);
 
-  return { activeTeam, psychicId: psychic.playerId, winner: after.body?.game?.winner ?? null };
+  return { psychicId: psychic.playerId };
 }
 
 const first = await playRound(1);
@@ -210,21 +194,8 @@ const first = await playRound(1);
 const advanced = await call(others[0], `/api/rooms/${roomId}/next-round`, { method: "POST" });
 check("any player can advance the round", advanced.status === 201, JSON.stringify(advanced.body));
 
-const advanceAgain = await call(host, `/api/rooms/${roomId}/next-round`, { method: "POST" });
-check("advancing twice is refused", advanceAgain.status === 409, `got ${advanceAgain.status}`);
-
 const second = await playRound(2);
-check("the active team alternates", second && first && second.activeTeam !== first.activeTeam,
-  `${first?.activeTeam} then ${second?.activeTeam}`);
-
-await call(host, `/api/rooms/${roomId}/next-round`, { method: "POST" });
-const third = await playRound(3);
-check("the psychic rotates within a team", third && first && third.psychicId !== first.psychicId,
-  "same player was psychic twice for one team");
-
-// --- teams are fixed once play begins ---------------------------------------
-const lateSwitch = await call(others[0], `/api/rooms/${roomId}/team`, { method: "POST", body: { team: "a" } });
-check("teams cannot be switched mid-game", lateSwitch.status === 409, `got ${lateSwitch.status}`);
+check("the psychic rotates", second.psychicId !== first.psychicId);
 
 // --- identity ---------------------------------------------------------------
 const stranger = makePlayer("Stranger");

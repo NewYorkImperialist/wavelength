@@ -2,7 +2,7 @@ import { createRound } from "@/lib/server/createRound";
 import { notifyRoom } from "@/lib/server/broadcast";
 import { serviceClient } from "@/lib/server/db";
 import { ApiError, handleRoute } from "@/lib/server/errors";
-import { otherTeam, type DbTeam } from "@/lib/server/guards";
+import type { DbTeam } from "@/lib/server/guards";
 import { requireActor } from "@/lib/server/session";
 
 export const runtime = "nodejs";
@@ -54,21 +54,13 @@ export async function POST(
     if (closeError !== null) throw new ApiError("SERVER_ERROR", "Could not close the round.");
     if (closed === null) throw new ApiError("CONFLICT", "That round is not ready to advance.");
 
-    // Alternate teams — unless there is no other team, in which case co-op
-    // keeps playing on the same side and only the Psychic rotates.
-    const next = otherTeam(closed.active_team);
-    const { count: nextTeamSize } = await db
-      .from("players")
-      .select("id", { count: "exact", head: true })
-      .eq("room_id", roomId)
-      .eq("team", next)
-      .is("left_at", null);
-
+    // No teams to alternate between: the same side plays every round and
+    // only the Psychic rotates.
     const { roundId } = await createRound({
       roomId,
       gameId: game.id,
       roundNumber: closed.round_number + 1,
-      activeTeam: (nextTeamSize ?? 0) > 0 ? next : closed.active_team,
+      activeTeam: closed.active_team,
     });
 
     await db.from("rooms").update({ last_active_at: new Date().toISOString() }).eq("id", roomId);

@@ -80,15 +80,17 @@ describe("the happy path", () => {
     expect(room.public.round?.needleLocked).toBe(true);
     expect(room.public.round?.clue).toBe("Batman");
 
-    // Target 100 steps right of the needle: a 2 for the active team, and the
-    // opponents called "right" correctly for their bonus.
-    const result = transition(room, { type: "targetRevealed", targetCenter: 0.5 + step(100) });
+    // Target out in the 2-band, and the opponents called "right" correctly.
+    const result = transition(room, {
+      type: "targetRevealed",
+      targetCenter: 0.5 + step(TARGET_HALF_STEPS.two),
+    });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
     const after = result.state.public;
     expect(after.phase).toBe("reveal");
-    expect(after.round?.revealedTarget).toBe(0.5 + step(100));
+    expect(after.round?.revealedTarget).toBe(0.5 + step(TARGET_HALF_STEPS.two));
     expect(after.round?.result?.activeTeamPoints).toBe(2);
     expect(after.round?.result?.opposingTeamPoints).toBe(1);
     expect(after.teams.teamA.score).toBe(2);

@@ -20,18 +20,21 @@ describe("scoreNeedle", () => {
 
   // Bands are closed at their outer edge, so a needle exactly on a wedge line
   // scores the HIGHER value. These cases pin every boundary in the target.
+  // Derived from the constants, so retuning the band widths cannot leave
+  // these silently asserting the old geometry.
+  const { four, three, two } = TARGET_HALF_STEPS;
   const boundaries: ReadonlyArray<[delta: number, score: number]> = [
     [0, 4],
-    [24, 4],
-    [25, 4], // last step of the 4-wedge
-    [26, 3],
-    [74, 3],
-    [75, 3], // last step of the 3-wedge
-    [76, 2],
-    [124, 2],
-    [125, 2], // last step of the target
-    [126, 0], // off the target entirely
-    [400, 0],
+    [four - 1, 4],
+    [four, 4], // last step of the 4-wedge
+    [four + 1, 3],
+    [three - 1, 3],
+    [three, 3], // last step of the 3-wedge
+    [three + 1, 2],
+    [two - 1, 2],
+    [two, 2], // last step of the target
+    [two + 1, 0], // off the target entirely
+    [two + 400, 0],
   ];
 
   it.each(boundaries)("scores %i steps right of centre as %i", (delta, expected) => {
@@ -57,9 +60,14 @@ describe("scoreNeedle", () => {
   });
 
   it("survives float arithmetic that would break an epsilon comparison", () => {
+    // The point is that these are exact despite the arithmetic, so the
+    // expected values come from the same step maths the scorer uses.
+    const expected = (delta: number) =>
+      delta <= four ? 4 : delta <= three ? 3 : delta <= two ? 2 : 0;
+
     expect(scoreNeedle(0.1 + 0.2, 0.3)).toBe(4);
-    expect(scoreNeedle(0.35, 0.35 - 0.02)).toBe(3); // 40 steps -> 3-wedge
-    expect(scoreNeedle(0.35, 0.35 - 0.05)).toBe(2); // 100 steps -> 2-wedge
+    expect(scoreNeedle(0.35, 0.35 - 0.02)).toBe(expected(40));
+    expect(scoreNeedle(0.35, 0.35 - 0.05)).toBe(expected(100));
     expect(scoreNeedle(0.7, 0.1 + 0.6)).toBe(4);
   });
 

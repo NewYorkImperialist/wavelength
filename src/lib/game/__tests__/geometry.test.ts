@@ -197,10 +197,16 @@ describe("targetWedges", () => {
     expect((first.from + last.to) / 2).toBeCloseTo(0.5, 12);
   });
 
-  it("keeps the 4-wedge narrowest and symmetric", () => {
+  it("keeps the 4-wedge symmetric about the target centre", () => {
     const four = wedges[2]!;
-    expect(four.to - four.from).toBeLessThan(wedges[0]!.to - wedges[0]!.from);
     expect(0.5 - four.from).toBeCloseTo(four.to - 0.5, 12);
+  });
+
+  it("has five bands of equal width", () => {
+    const widths = wedges.map((w) => w.to - w.from);
+    for (const width of widths) {
+      expect(width).toBeCloseTo(widths[0]!, 12);
+    }
   });
 });
 

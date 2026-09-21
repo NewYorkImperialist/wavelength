@@ -2,6 +2,8 @@ import "server-only";
 
 import { randomInt } from "node:crypto";
 
+import { FREE_FOR_ALL_WINNING_SCORE } from "@/lib/game/constants";
+
 import { serviceClient } from "./db";
 import { ApiError } from "./errors";
 import { mintToken } from "./session";
@@ -64,7 +66,7 @@ export async function createRoom(displayNameRaw: unknown): Promise<JoinResult> {
     const code = generateCode();
     const { data: room, error } = await db
       .from("rooms")
-      .insert({ code })
+      .insert({ code, winning_score: FREE_FOR_ALL_WINNING_SCORE })
       .select("id, code")
       .single<{ id: string; code: string }>();
 
