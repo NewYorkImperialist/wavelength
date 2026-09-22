@@ -140,6 +140,11 @@ async function playRound(roundNumber) {
     { method: "POST", body: { clue: "Batman" } });
   check(`round ${roundNumber}: the psychic gives a clue`, clue.status === 200);
 
+  const lateSkip = await call(guessers[0], `/api/rounds/${round.id}/skip-vote`,
+    { method: "POST", body: { voting: true } });
+  check(`round ${roundNumber}: cannot vote to skip once the clue is out`,
+    lateSkip.status === 409, `got ${lateSkip.status}`);
+
   // -- everyone guesses for themselves --
   const psychicGuess = await call(psychic, `/api/rounds/${round.id}/guess`,
     { method: "POST", body: { position: target } });
@@ -189,6 +194,71 @@ async function playRound(roundNumber) {
   return { psychicId: psychic.playerId };
 }
 
+// --- vote-skip --------------------------------------------------------------
+// Run before the first round is played, while the card is still unread. Four
+// players, so a strict majority is three.
+{
+  const before = (await call(host, `/api/rooms/${roomId}/state`)).body;
+  const round = before.round;
+  const firstCard = round.card.id;
+  const commitmentBefore = round.targetCommitment;
+
+  check("a fresh round has no skip votes",
+    before.skipVotes.voterIds.length === 0, JSON.stringify(before.skipVotes));
+  check("three of four votes are needed to skip",
+    before.skipVotes.required === 3, `required ${before.skipVotes.required}`);
+
+  const one = await call(host, `/api/rounds/${round.id}/skip-vote`,
+    { method: "POST", body: { voting: true } });
+  check("a player votes to skip the card",
+    one.status === 200 && one.body.votes === 1 && one.body.skipped === false,
+    JSON.stringify(one.body));
+
+  const twice = await call(host, `/api/rounds/${round.id}/skip-vote`,
+    { method: "POST", body: { voting: true } });
+  check("voting twice is the same vote, not two",
+    twice.body?.votes === 1, JSON.stringify(twice.body));
+
+  const withdrawn = await call(host, `/api/rounds/${round.id}/skip-vote`,
+    { method: "POST", body: { voting: false } });
+  check("a vote can be withdrawn",
+    withdrawn.body?.votes === 0, JSON.stringify(withdrawn.body));
+
+  const bare = await call(host, `/api/rounds/${round.id}/skip-vote`, { method: "POST" });
+  check("a vote must say which way it goes", bare.status === 400, `got ${bare.status}`);
+
+  // Three votes, the third of which should carry.
+  const voters = all.slice(0, 3);
+  const results = [];
+  for (const voter of voters) {
+    results.push(await call(voter, `/api/rounds/${round.id}/skip-vote`,
+      { method: "POST", body: { voting: true } }));
+  }
+
+  check("the first two votes do not carry",
+    results[0].body?.skipped === false && results[1].body?.skipped === false,
+    JSON.stringify(results.map((r) => r.body)));
+  check("the third vote carries the skip",
+    results[2].body?.skipped === true, JSON.stringify(results[2].body));
+
+  const after = (await call(host, `/api/rooms/${roomId}/state`)).body;
+  check("the skip deals a different card",
+    after.round.card.id !== firstCard, `${firstCard} -> ${after.round.card.id}`);
+  check("the same player is still the Psychic",
+    after.round.psychicPlayerId === round.psychicPlayerId);
+  check("the round number does not advance on a skip",
+    after.round.roundNumber === round.roundNumber,
+    `${round.roundNumber} -> ${after.round.roundNumber}`);
+  check("the round goes back to waiting for a clue",
+    after.round.phase === "clue" && after.round.clue === null, after.round.phase);
+  check("a new commitment is published with the new card",
+    after.round.targetCommitment !== commitmentBefore);
+  check("the replacement card starts with a clean tally",
+    after.skipVotes.voterIds.length === 0, JSON.stringify(after.skipVotes));
+  check("nobody scored for the skipped card",
+    after.players.every((p) => p.score === 0), JSON.stringify(after.players));
+}
+
 const first = await playRound(1);
 
 const advanced = await call(others[0], `/api/rooms/${roomId}/next-round`, { method: "POST" });
@@ -196,6 +266,48 @@ check("any player can advance the round", advanced.status === 201, JSON.stringif
 
 const second = await playRound(2);
 check("the psychic rotates", second.psychicId !== first.psychicId);
+
+// --- a departure can carry a skip that was one vote short -------------------
+// Nobody is going to press anything to make this happen, so the leave route
+// has to re-check the arithmetic itself.
+{
+  const advanced3 = await call(host, `/api/rooms/${roomId}/next-round`, { method: "POST" });
+  check("a third round is dealt", advanced3.status === 201, JSON.stringify(advanced3.body));
+
+  const before = (await call(host, `/api/rooms/${roomId}/state`)).body;
+  const round = before.round;
+  const cardBefore = round.card.id;
+
+  // Someone who is neither the host nor the Psychic, so their departure does
+  // not also trigger a handover and cloud the result.
+  const leaver = all.find(
+    (p) => p.playerId !== host.playerId && p.playerId !== round.psychicPlayerId,
+  );
+  const voters = all.filter((p) => p !== leaver).slice(0, 2);
+
+  for (const voter of voters) {
+    await call(voter, `/api/rounds/${round.id}/skip-vote`,
+      { method: "POST", body: { voting: true } });
+  }
+
+  const short = (await call(host, `/api/rooms/${roomId}/state`)).body;
+  check("two of four votes is one short",
+    short.skipVotes.voterIds.length === 2 && short.skipVotes.required === 3,
+    JSON.stringify(short.skipVotes));
+  check("the card is untouched while the vote is short",
+    short.round.card.id === cardBefore);
+
+  const left = await call(leaver, `/api/rooms/${roomId}/leave`, { method: "POST" });
+  check("a non-voter leaves the room", left.status === 200, JSON.stringify(left.body));
+
+  const after = (await call(host, `/api/rooms/${roomId}/state`)).body;
+  check("the departure carries the skip without anyone pressing again",
+    after.round.card.id !== cardBefore, `still ${after.round.card.id}`);
+  check("the Psychic is unchanged by a skip that a departure carried",
+    after.round.psychicPlayerId === round.psychicPlayerId);
+  check("three players now need two votes",
+    after.skipVotes.required === 2, `required ${after.skipVotes.required}`);
+}
 
 // --- identity ---------------------------------------------------------------
 const stranger = makePlayer("Stranger");

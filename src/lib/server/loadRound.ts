@@ -18,7 +18,9 @@ export async function loadRoundAndActor(
 
   const { data: round, error } = await db
     .from("rounds")
-    .select("id, room_id, game_id, phase, active_team, psychic_player_id, needle_controller_id")
+    .select(
+      "id, room_id, game_id, phase, active_team, psychic_player_id, needle_controller_id, card_id",
+    )
     .eq("id", roundId)
     .maybeSingle<RoundRow>();
 

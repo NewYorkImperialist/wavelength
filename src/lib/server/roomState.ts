@@ -1,5 +1,7 @@
 import "server-only";
 
+import { tallySkipVotes } from "@/lib/game/vote-skip";
+
 import { serviceClient } from "./db";
 import { ApiError } from "./errors";
 import {
@@ -61,6 +63,15 @@ export interface RoomStateDto {
     suddenDeathIndex: number;
   };
   readonly round: PublicRoundDto | null;
+  /**
+   * Who currently wants the card thrown away, and how many votes that would
+   * take. Not secret: watching the tally move is what makes this a vote
+   * rather than a silent host power.
+   */
+  readonly skipVotes: {
+    readonly voterIds: readonly string[];
+    readonly required: number;
+  };
   /** True when everyone is on one side: no opposing team, no left/right call. */
   readonly cooperative: boolean;
   readonly serverTimeMs: number;
@@ -119,6 +130,7 @@ export async function loadRoomState(actor: Actor): Promise<RoomStateDto> {
 
   let round: PublicRoundDto | null = null;
   let guesses: RoomStateDto["guesses"] = [];
+  let skipVotes: RoomStateDto["skipVotes"] = { voterIds: [], required: 0 };
   if (game?.current_round_id != null) {
     const { data: roundRow } = await db
       .from("rounds")
@@ -154,6 +166,21 @@ export async function loadRoomState(actor: Actor): Promise<RoomStateDto> {
         position: roundRow.revealed_target === null ? -1 : stepsToPosition(row.position),
         points: row.points,
       }));
+
+      const { data: voteRows } = await db
+        .from("round_skip_votes")
+        .select("player_id, card_id")
+        .eq("round_id", roundRow.id)
+        .returns<{ player_id: string; card_id: string }[]>();
+
+      // Tallied through the engine rather than counted here, so the rules
+      // about stale and departed votes have one implementation.
+      const tally = tallySkipVotes(
+        (playerRows ?? []).map((player) => player.id),
+        (voteRows ?? []).map((row) => ({ playerId: row.player_id, cardId: row.card_id })),
+        roundRow.card_id,
+      );
+      skipVotes = { voterIds: tally.voterIds, required: tally.required };
     }
   }
 
@@ -194,6 +221,7 @@ export async function loadRoomState(actor: Actor): Promise<RoomStateDto> {
           },
     round,
     guesses,
+    skipVotes,
     cooperative:
       (playerRows ?? []).filter((p) => p.team === "a").length === 0 ||
       (playerRows ?? []).filter((p) => p.team === "b").length === 0,

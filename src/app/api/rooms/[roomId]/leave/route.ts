@@ -5,6 +5,7 @@ import { commitToTarget, generateTargetSteps } from "@/lib/server/createRound";
 import { serviceClient } from "@/lib/server/db";
 import { ApiError, handleRoute } from "@/lib/server/errors";
 import { requireActor } from "@/lib/server/session";
+import { reconsiderSkipVotes } from "@/lib/server/skipVote";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,9 @@ export const dynamic = "force-dynamic";
  * Two things must be handed on before they go, or the room can strand:
  * the host badge (nobody else can start or restart) and the Psychic role
  * (the round waits forever for a clue that is not coming).
+ *
+ * A departure also changes the arithmetic of a skip vote, so that is
+ * re-checked here rather than waiting for someone to press something.
  */
 export async function POST(
   _request: Request,
@@ -37,6 +41,11 @@ export async function POST(
 
     if (actor.isHost) await reassignHost(roomId, actor.playerId);
     await reassignPsychicIfNeeded(roomId, actor.playerId);
+
+    // After the handover, not before: a replacement Psychic re-rolls the
+    // target, and the skip has to be judged against whoever is holding the
+    // card now.
+    await reconsiderSkipVotes(roomId);
 
     notifyRoom(roomId, "player-left");
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

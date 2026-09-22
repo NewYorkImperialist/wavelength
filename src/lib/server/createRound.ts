@@ -105,7 +105,18 @@ export async function pickPsychic(
   return { psychicId: psychic.id, controllerId: controller.id };
 }
 
-async function pickCard(gameId: string): Promise<string> {
+/**
+ * Draw a card that has not been played this game.
+ *
+ * `banned` is excluded even from the reshuffle, unlike the used list. It
+ * carries the card a vote-skip just rejected: on a small deck the reshuffle
+ * would otherwise be free to deal straight back the card the room had only
+ * just voted out.
+ */
+export async function pickCard(
+  gameId: string,
+  banned: readonly string[] = [],
+): Promise<string> {
   const db = serviceClient();
 
   const { data: used } = await db
@@ -114,11 +125,13 @@ async function pickCard(gameId: string): Promise<string> {
     .eq("game_id", gameId)
     .returns<{ card_id: string }[]>();
 
-  const usedIds = (used ?? []).map((row) => row.card_id);
+  const quoted = (ids: readonly string[]): string =>
+    `(${ids.map((id) => `"${id}"`).join(",")})`;
+  const usedIds = [...new Set([...(used ?? []).map((row) => row.card_id), ...banned])];
 
   let query = db.from("spectrum_cards").select("id").eq("enabled", true);
   if (usedIds.length > 0) {
-    query = query.not("id", "in", `(${usedIds.map((id) => `"${id}"`).join(",")})`);
+    query = query.not("id", "in", quoted(usedIds));
   }
 
   const { data: available, error } = await query.returns<{ id: string }[]>();
@@ -126,12 +139,15 @@ async function pickCard(gameId: string): Promise<string> {
 
   // Exhausted decks reshuffle rather than ending the game for a reason that
   // has nothing to do with the rules.
+  let fallback = db.from("spectrum_cards").select("id").eq("enabled", true);
+  if (banned.length > 0) {
+    fallback = fallback.not("id", "in", quoted(banned));
+  }
+
   const pool =
     available !== null && available.length > 0
       ? available
-      : ((
-          await db.from("spectrum_cards").select("id").eq("enabled", true).returns<{ id: string }[]>()
-        ).data ?? []);
+      : ((await fallback.returns<{ id: string }[]>()).data ?? []);
 
   const chosen = pool[randomInt(0, Math.max(1, pool.length))];
   if (chosen === undefined) throw new ApiError("SERVER_ERROR", "The deck is empty.");

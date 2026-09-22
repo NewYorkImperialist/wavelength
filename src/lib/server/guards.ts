@@ -23,6 +23,8 @@ export interface RoundRow {
   readonly active_team: DbTeam;
   readonly psychic_player_id: string;
   readonly needle_controller_id: string | null;
+  /** Needed by any action that must not outlive the card it was aimed at. */
+  readonly card_id: string;
 }
 
 export const otherTeam = (team: DbTeam): DbTeam => (team === "a" ? "b" : "a");

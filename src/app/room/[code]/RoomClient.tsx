@@ -32,10 +32,18 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
    * Fetched HERE, in a client component after hydration — never during SSR,
    * because RSC output is serialised into the page HTML and the secret would
    * end up in the document. Held in component state rather than the shared
-   * store so it never appears in anything devtools enumerates, and tagged
-   * with its round so a stale one can never be shown against a new one.
+   * store so it never appears in anything devtools enumerates.
+   *
+   * Tagged with the round AND the card, so a stale target can never be shown
+   * against a new one. The card matters because a vote-skip rewrites the card
+   * on the same round row: the round id alone stopped identifying a target the
+   * moment a card could be replaced under it.
    */
-  const [target, setTarget] = useState<{ roundId: string; value: number } | null>(null);
+  const [target, setTarget] = useState<{
+    roundId: string;
+    cardId: string;
+    value: number;
+  } | null>(null);
   const fetchedFor = useRef<string | null>(null);
 
   useStore(room.needleStore);
@@ -68,28 +76,33 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
   );
 
   const roundId = state.round?.id ?? null;
+  const cardId = state.round?.card.id ?? null;
   const isPsychic = state.me.isPsychic;
   const phase = state.round?.phase ?? null;
 
   useEffect(() => {
-    if (roundId === null || !isPsychic) return;
+    if (roundId === null || cardId === null || !isPsychic) return;
     if (phase === "reveal" || phase === "complete") return;
-    if (fetchedFor.current === roundId) return;
 
-    fetchedFor.current = roundId;
+    // Keyed by card as well as round, so a skipped card re-fetches instead of
+    // leaving the Psychic looking at the target of a card that is gone.
+    const key = `${roundId}:${cardId}`;
+    if (fetchedFor.current === key) return;
+
+    fetchedFor.current = key;
     let cancelled = false;
 
     void (async () => {
       const response = await fetch(`/api/rounds/${roundId}/target`, { cache: "no-store" });
       if (!response.ok || cancelled) return;
       const body = (await response.json()) as { targetCenter: number };
-      if (!cancelled) setTarget({ roundId, value: body.targetCenter });
+      if (!cancelled) setTarget({ roundId, cardId, value: body.targetCenter });
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [roundId, isPsychic, phase]);
+  }, [roundId, cardId, isPsychic, phase]);
 
   const leave = () => {
     void call(`/api/rooms/${state.room.id}/leave`).then((ok) => {
@@ -125,7 +138,7 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
 
   const targetForDial = revealed
     ? round.revealedTarget
-    : isPsychic && target?.roundId === round.id
+    : isPsychic && target?.roundId === round.id && target.cardId === round.card.id
       ? target.value
       : null;
 
@@ -228,6 +241,9 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
           onForceReveal={() => void call(`/api/rounds/${round.id}/force-reveal`)}
           onNextRound={() => void call(`/api/rooms/${state.room.id}/next-round`)}
           onRestart={() => void call(`/api/rooms/${state.room.id}/restart`)}
+          onToggleSkipVote={(voting) =>
+            void call(`/api/rounds/${round.id}/skip-vote`, { voting })
+          }
         />
 
         <Leaderboard

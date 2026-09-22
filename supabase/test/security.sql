@@ -246,3 +246,112 @@ begin
   end if;
   raise notice 'PASS T13: take_round_target returns the target and nonce';
 end; $$;
+
+-- ===========================================================================
+-- Vote-skip. The reroll rewrites the card on the live round row, so the
+-- interesting cases are all about what happens when something else is
+-- touching that row at the same time.
+-- ===========================================================================
+
+\echo '--- T14: a carried vote swaps the card, the target and the commitment'
+do $$
+declare
+  v_ok        boolean;
+  v_card      text;
+  v_commit    bytea;
+  v_target    smallint;
+begin
+  insert into round_skip_votes (round_id, player_id, card_id)
+  values ('44444444-4444-4444-4444-444444444444',
+          'aaaaaaaa-0000-0000-0000-000000000001', 'c001')
+  on conflict do nothing;
+
+  select public.reroll_round_card(
+    '44444444-4444-4444-4444-444444444444'::uuid,
+    'c001', 'c002', 777::smallint,
+    '\x1111111111111111111111111111111111'::bytea, '\xbeef'::bytea) into v_ok;
+
+  if not v_ok then raise exception 'FAIL T14: the reroll refused a valid swap'; end if;
+
+  select card_id, target_commitment into v_card, v_commit
+    from rounds where id = '44444444-4444-4444-4444-444444444444';
+  if v_card <> 'c002' then raise exception 'FAIL T14: card is still %', v_card; end if;
+  if v_commit <> '\xbeef'::bytea then
+    raise exception 'FAIL T14: the commitment was not republished';
+  end if;
+
+  -- The commitment is only worth anything if the target moved with it.
+  select read_round_target('44444444-4444-4444-4444-444444444444'::uuid) into v_target;
+  if v_target <> 777 then
+    raise exception 'FAIL T14: target is % — the commitment is now a lie', v_target;
+  end if;
+
+  if not exists (select 1 from game_used_cards
+                  where game_id = '33333333-3333-3333-3333-333333333333'
+                    and card_id = 'c002') then
+    raise exception 'FAIL T14: the replacement card was not recorded as used';
+  end if;
+
+  raise notice 'PASS T14: card, target and commitment all moved together';
+end; $$;
+
+-- ===========================================================================
+\echo '--- T15: the second of two simultaneous skips is refused'
+do $$
+declare v_ok boolean; v_card text;
+begin
+  -- Exactly what the losing request of a tie sends: the card it read before
+  -- the other one won. It must not skip a second card nobody had read.
+  select public.reroll_round_card(
+    '44444444-4444-4444-4444-444444444444'::uuid,
+    'c001', 'c003', 888::smallint,
+    '\x2222222222222222222222222222222222'::bytea, '\xf00d'::bytea) into v_ok;
+
+  if v_ok then raise exception 'FAIL T15: a stale expected card was accepted'; end if;
+
+  select card_id into v_card from rounds where id = '44444444-4444-4444-4444-444444444444';
+  if v_card <> 'c002' then raise exception 'FAIL T15: the card changed anyway (%)', v_card; end if;
+
+  raise notice 'PASS T15: a stale expected card is refused and nothing moves';
+end; $$;
+
+-- ===========================================================================
+\echo '--- T16: votes against the discarded card do not carry over'
+do $$
+declare n int;
+begin
+  -- Ada''s vote from T14 is still on the table, but it names c001. Counting
+  -- votes for the card actually in play has to ignore it, or the replacement
+  -- would arrive already part-way to being binned.
+  select count(*) into n from round_skip_votes
+   where round_id = '44444444-4444-4444-4444-444444444444' and card_id = 'c002';
+  if n <> 0 then raise exception 'FAIL T16: % vote(s) carried over to the new card', n; end if;
+
+  if not exists (select 1 from round_skip_votes
+                  where round_id = '44444444-4444-4444-4444-444444444444'
+                    and card_id = 'c001') then
+    raise exception 'FAIL T16: the old vote vanished instead of going inert';
+  end if;
+
+  raise notice 'PASS T16: old votes go inert rather than following the round';
+end; $$;
+
+-- ===========================================================================
+\echo '--- T17: once the clue is given it is too late to skip'
+do $$
+declare v_ok boolean;
+begin
+  update rounds set clue = 'Batman', phase = 'guess'
+   where id = '44444444-4444-4444-4444-444444444444';
+
+  select public.reroll_round_card(
+    '44444444-4444-4444-4444-444444444444'::uuid,
+    'c002', 'c004', 999::smallint,
+    '\x3333333333333333333333333333333333'::bytea, '\xcafe'::bytea) into v_ok;
+
+  if v_ok then
+    raise exception 'FAIL T17: skipped a card the room had already been clued';
+  end if;
+
+  raise notice 'PASS T17: the reroll is refused outside the clue phase';
+end; $$;

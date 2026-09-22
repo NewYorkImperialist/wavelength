@@ -57,6 +57,45 @@ console.log(`        psychic is ${psychic.name}\n`);
 
 const guessers = all.filter((p) => p !== psychic);
 
+// --- vote-skip, before anyone has read a clue -------------------------------
+{
+  // textContent, not innerText: the dial is an SVG <g>, not an HTMLElement.
+  const labelsOf = ({ page }) =>
+    page.getByRole("group", { name: /dial/i }).textContent();
+  const labelsBefore = await labelsOf(psychic);
+
+  for (const player of all) {
+    check(
+      `${player.name} is offered the skip`,
+      (await player.page.getByRole("button", { name: "Skip this card" }).count()) === 1,
+    );
+  }
+
+  // Four players, so it takes three. The Psychic is allowed to be one of them.
+  for (const player of all.slice(0, 3)) {
+    await player.page.getByRole("button", { name: /Skip this card|Undo my skip vote/ }).click();
+    await player.page.waitForTimeout(1200);
+  }
+
+  await Promise.all(all.map(({ page }) => page.waitForTimeout(2500)));
+
+  const labelsAfter = await labelsOf(psychic);
+  check("three votes replace the card", labelsAfter !== labelsBefore,
+    `${labelsBefore.replace(/\n/g, " ")} -> ${labelsAfter.replace(/\n/g, " ")}`);
+  check("the same player is still holding the clue box",
+    (await psychic.page.getByLabel("Your clue").count()) === 1);
+  check("the skipped card does not cost a round",
+    /Round 1\b/.test(await psychic.page.innerText("body")));
+
+  for (const player of all) {
+    check(
+      `${player.name} is back to an unvoted tally`,
+      (await player.page.getByRole("button", { name: "Skip this card" }).count()) === 1,
+    );
+  }
+  console.log("");
+}
+
 await psychic.page.getByLabel("Your clue").fill("Batman");
 await psychic.page.getByRole("button", { name: "Give clue" }).click();
 

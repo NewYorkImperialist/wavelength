@@ -33,16 +33,27 @@ export async function POST(
 
     // Conditional on the phase: if two submissions race, one wins and the
     // other gets a 409 rather than overwriting the clue everyone just read.
+    //
+    // Conditional on the card too, because a vote-skip rewrites the card on
+    // this same row. A clue written for the old card must not be recorded
+    // against the replacement, which is what would happen if the skip landed
+    // in the gap between reading the round above and updating it here.
     const { data, error } = await serviceClient()
       .from("rounds")
       .update({ clue, clue_at: new Date().toISOString(), phase: "guess" })
       .eq("id", roundId)
       .eq("phase", "clue")
+      .eq("card_id", round.card_id)
       .select("id")
       .maybeSingle<{ id: string }>();
 
     if (error !== null) throw new ApiError("SERVER_ERROR", "Could not save the clue.");
-    if (data === null) throw new ApiError("CONFLICT", "The clue was already given.");
+    if (data === null) {
+      throw new ApiError(
+        "CONFLICT",
+        "The clue was already given, or the room skipped that card.",
+      );
+    }
 
     notifyRoom(round.room_id, "clue");
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

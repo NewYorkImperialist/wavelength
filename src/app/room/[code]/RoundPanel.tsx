@@ -21,6 +21,7 @@ export interface RoundPanelProps {
   onForceReveal: () => void;
   onNextRound: () => void;
   onRestart: () => void;
+  onToggleSkipVote: (voting: boolean) => void;
 }
 
 const Panel = ({ children }: { children: React.ReactNode }) => (
@@ -28,6 +29,45 @@ const Panel = ({ children }: { children: React.ReactNode }) => (
     {children}
   </section>
 );
+
+/**
+ * Offered to everyone, the Psychic included — they are usually the one who can
+ * see the card is hopeless. The tally is shown rather than just the button so
+ * it reads as a vote the room is taking, and nobody presses it twice wondering
+ * whether it registered.
+ */
+function SkipCardVote({
+  voted,
+  votes,
+  required,
+  busy,
+  onToggle,
+}: {
+  voted: boolean;
+  votes: number;
+  required: number;
+  busy: boolean;
+  onToggle: (voting: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <button
+        type="button"
+        onClick={() => onToggle(!voted)}
+        disabled={busy}
+        aria-pressed={voted}
+        className="rounded-xl border border-white/20 px-6 py-2.5 text-sm font-semibold text-stone-300 hover:bg-white/10 disabled:opacity-40"
+      >
+        {voted ? "Undo my skip vote" : "Skip this card"}
+      </button>
+      <p aria-live="polite" className="text-xs text-stone-500">
+        {votes === 0
+          ? `Nobody can clue it? ${required} of you can bin it and draw another.`
+          : `${votes} of ${required} voted to bin this card.`}
+      </p>
+    </div>
+  );
+}
 
 /** What you see depends only on your role and the phase. */
 export function RoundPanel(props: RoundPanelProps) {
@@ -94,54 +134,72 @@ export function RoundPanel(props: RoundPanelProps) {
 
   // ---- the Psychic writes a clue -----------------------------------------
   if (round.phase === "clue") {
+    // Only while the card is still unread. Once the clue is out, skipping
+    // would be a second attempt at the same turn.
+    const skipVote = (
+      <SkipCardVote
+        voted={state.skipVotes.voterIds.includes(state.me.playerId)}
+        votes={state.skipVotes.voterIds.length}
+        required={state.skipVotes.required}
+        busy={busy}
+        onToggle={props.onToggleSkipVote}
+      />
+    );
+
     if (!isPsychic) {
       return (
-        <Panel>
-          <p className="text-stone-400" aria-live="polite">
-            {psychicName} is looking at the target…
-          </p>
-        </Panel>
+        <div className="flex flex-col gap-3">
+          <Panel>
+            <p className="text-stone-400" aria-live="polite">
+              {psychicName} is looking at the target…
+            </p>
+          </Panel>
+          {skipVote}
+        </div>
       );
     }
     return (
-      <Panel>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            props.onSubmitClue(clue);
-            setClue("");
-          }}
-        >
-          <label
-            htmlFor="clue"
-            className="block text-sm font-semibold uppercase tracking-wide text-stone-400"
+      <div className="flex flex-col gap-3">
+        <Panel>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              props.onSubmitClue(clue);
+              setClue("");
+            }}
           >
-            Your clue
-          </label>
-          <p className="mt-1 text-sm text-stone-500">
-            One word or phrase that belongs where the target is. Everyone else
-            guesses on their own — you score the average of how they do.
-          </p>
-          <div className="mt-3 flex gap-2">
-            <input
-              id="clue"
-              value={clue}
-              onChange={(e) => setClue(e.target.value)}
-              maxLength={MAX_CLUE_LENGTH}
-              autoComplete="off"
-              placeholder="e.g. Batman"
-              className="min-w-0 flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-3 text-white placeholder:text-stone-500 focus:border-white/40 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={clue.trim().length === 0 || busy}
-              className="shrink-0 rounded-lg bg-white px-5 py-3 font-bold text-stone-900 disabled:opacity-40"
+            <label
+              htmlFor="clue"
+              className="block text-sm font-semibold uppercase tracking-wide text-stone-400"
             >
-              Give clue
-            </button>
-          </div>
-        </form>
-      </Panel>
+              Your clue
+            </label>
+            <p className="mt-1 text-sm text-stone-500">
+              One word or phrase that belongs where the target is. Everyone else
+              guesses on their own — you score the average of how they do.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <input
+                id="clue"
+                value={clue}
+                onChange={(e) => setClue(e.target.value)}
+                maxLength={MAX_CLUE_LENGTH}
+                autoComplete="off"
+                placeholder="e.g. Batman"
+                className="min-w-0 flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-3 text-white placeholder:text-stone-500 focus:border-white/40 focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={clue.trim().length === 0 || busy}
+                className="shrink-0 rounded-lg bg-white px-5 py-3 font-bold text-stone-900 disabled:opacity-40"
+              >
+                Give clue
+              </button>
+            </div>
+          </form>
+        </Panel>
+        {skipVote}
+      </div>
     );
   }
 
