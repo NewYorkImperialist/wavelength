@@ -4,7 +4,7 @@
  * The thing to prove: everyone guesses on their own dial, nobody can see
  * anyone else's guess until the reveal, and then everyone sees all of them.
  *
- *   BASE_URL=https://wave-length.fly.dev node e2e/free-for-all.mjs
+ *   BASE_URL=https://wavelength.jaydenlin.net node e2e/free-for-all.mjs
  */
 import { chromium } from "playwright";
 

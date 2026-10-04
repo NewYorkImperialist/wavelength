@@ -11,6 +11,22 @@ const nextConfig: NextConfig = {
   // Client source maps would serve readable app code from production. Nothing
   // secret is compiled into the bundle, but there is no reason to publish it.
   productionBrowserSourceMaps: false,
+
+  /**
+   * One canonical host. The session cookie is host-only, so a player who
+   * joined on www. and later lands on the bare subdomain would lose their
+   * seat in the room.
+   */
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.wavelength.jaydenlin.net" }],
+        destination: "https://wavelength.jaydenlin.net/:path*",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

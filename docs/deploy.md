@@ -43,11 +43,33 @@ fly deploy \
 Putting the public values in `fly.toml` under `[build.args]` avoids retyping
 them on every deploy.
 
+## Custom domain
+
+The game is served at `wavelength.jaydenlin.net`; `www.wavelength.jaydenlin.net`
+308-redirects to it (see `next.config.ts`). Fly issues the TLS certificates:
+
+```bash
+fly certs add wavelength.jaydenlin.net
+fly certs add www.wavelength.jaydenlin.net
+```
+
+DNS lives at the registrar (Spaceship). Both hosts point at the app's IPs —
+`fly ips list` shows them:
+
+| Type | Host             | Value                     |
+| ---- | ---------------- | ------------------------- |
+| A    | `wavelength`     | `66.241.125.178`          |
+| AAAA | `wavelength`     | `2a09:8280:1::195:c661:0` |
+| A    | `www.wavelength` | `66.241.125.178`          |
+| AAAA | `www.wavelength` | `2a09:8280:1::195:c661:0` |
+
+`fly certs check <host>` reports when validation completes.
+
 ## Verifying a deployment
 
 ```bash
-BASE_URL=https://wave-length.fly.dev node scripts/e2e-api.mjs
-BASE_URL=https://wave-length.fly.dev node e2e/no-target-leak.mjs
+BASE_URL=https://wavelength.jaydenlin.net node scripts/e2e-api.mjs
+BASE_URL=https://wavelength.jaydenlin.net node e2e/no-target-leak.mjs
 ```
 
 Both suites take a `BASE_URL`, so the same assertions that guard local
