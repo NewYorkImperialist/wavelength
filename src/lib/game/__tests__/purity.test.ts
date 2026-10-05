@@ -1,6 +1,6 @@
 /**
  * The engine must run identically on the server and in the browser, so it may
- * not reach for React, Next, Supabase, node built-ins, or ambient globals.
+ * not reach for React, Next, a database, node built-ins, or ambient globals.
  *
  * ESLint enforces this at edit time; this test enforces it in CI even if the
  * lint config is changed.
@@ -26,7 +26,6 @@ const FORBIDDEN_IMPORTS = [
   "react",
   "react-dom",
   "next",
-  "@supabase/",
   "node:",
   "server-only",
 ];

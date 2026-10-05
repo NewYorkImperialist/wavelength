@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 
 import { ApiError } from "./errors";
-import { serviceClient } from "./db";
+import { one } from "./db";
 
 /**
  * Anonymous identity.
@@ -66,33 +66,22 @@ export async function requireActor(roomId: string): Promise<Actor> {
     throw new ApiError("UNAUTHENTICATED", "No session for this room.");
   }
 
-  const db = serviceClient();
-  // Session hashes live in the unexposed `private` schema, so the lookup goes
-  // through a SECURITY DEFINER function granted only to service_role.
-  const { data: playerId, error } = await db.rpc("resolve_player_session", {
-    p_token_hash: `\\x${sha256(token).toString("hex")}`,
-  });
+  const player = one<{
+    id: string;
+    room_id: string;
+    team: "a" | "b" | null;
+    is_host: number;
+    display_name: string;
+    left_at: string | null;
+  }>(
+    `select p.id, p.room_id, p.team, p.is_host, p.display_name, p.left_at
+       from player_sessions s
+       join players p on p.id = s.player_id
+      where s.token_hash = ?`,
+    sha256(token),
+  );
 
-  if (error !== null) throw new ApiError("SERVER_ERROR", "Session lookup failed.");
-  if (typeof playerId !== "string" || playerId === "") {
-    throw new ApiError("UNAUTHENTICATED", "Unrecognised session.");
-  }
-
-  const { data: player, error: playerError } = await db
-    .from("players")
-    .select("id, room_id, team, is_host, display_name, left_at")
-    .eq("id", playerId)
-    .maybeSingle<{
-      id: string;
-      room_id: string;
-      team: "a" | "b" | null;
-      is_host: boolean;
-      display_name: string;
-      left_at: string | null;
-    }>();
-
-  if (playerError !== null) throw new ApiError("SERVER_ERROR", "Player lookup failed.");
-  if (player === null) throw new ApiError("UNAUTHENTICATED", "Player no longer exists.");
+  if (player === null) throw new ApiError("UNAUTHENTICATED", "Unrecognised session.");
   if (player.room_id !== roomId) {
     throw new ApiError("FORBIDDEN", "You are not in this room.");
   }
@@ -104,7 +93,7 @@ export async function requireActor(roomId: string): Promise<Actor> {
     playerId: player.id,
     roomId: player.room_id,
     team: player.team,
-    isHost: player.is_host,
+    isHost: player.is_host === 1,
     displayName: player.display_name,
   };
 }

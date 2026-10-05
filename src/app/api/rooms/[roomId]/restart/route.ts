@@ -1,5 +1,5 @@
 import { notifyRoom } from "@/lib/server/broadcast";
-import { serviceClient } from "@/lib/server/db";
+import { nowIso, one, run, transaction } from "@/lib/server/db";
 import { ApiError, handleRoute } from "@/lib/server/errors";
 import { assertHost } from "@/lib/server/guards";
 import { requireActor } from "@/lib/server/session";
@@ -26,38 +26,31 @@ export async function POST(
     const actor = await requireActor(roomId);
     assertHost(actor);
 
-    const db = serviceClient();
+    transaction(() => {
+      const game = one<{ id: string; status: string; winner: string | null }>(
+        "select id, status, winner from games where room_id = ? order by rowid desc limit 1",
+        roomId,
+      );
+      if (game === null) throw new ApiError("CONFLICT", "There is no game to replay.");
+      if (game.winner === null && game.status === "in_game") {
+        throw new ApiError("CONFLICT", "That game is still in progress.");
+      }
 
-    const { data: game } = await db
-      .from("games")
-      .select("id, status, winner")
-      .eq("room_id", roomId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle<{ id: string; status: string; winner: string | null }>();
+      // Make sure the old game cannot satisfy the "active game" index, so a
+      // new one can be created when the host starts again.
+      const now = nowIso();
+      run("update games set status = 'finished', ended_at = ? where id = ?", now, game.id);
 
-    if (game === null) throw new ApiError("CONFLICT", "There is no game to replay.");
-    if (game.winner === null && game.status === "in_game") {
-      throw new ApiError("CONFLICT", "That game is still in progress.");
-    }
-
-    // Make sure the old game cannot satisfy the "active game" index, so a new
-    // one can be created when the host starts again.
-    await db
-      .from("games")
-      .update({ status: "finished", ended_at: new Date().toISOString() })
-      .eq("id", game.id);
-
-    // A finished game leaves the ROOM as 'in_game' on purpose: rooms only
-    // reach 'finished' when abandoned, and that releases the join code — which
-    // must not happen while players are still sitting on the game-over screen.
-    const { error } = await db
-      .from("rooms")
-      .update({ status: "lobby", last_active_at: new Date().toISOString() })
-      .eq("id", roomId)
-      .neq("status", "finished");
-
-    if (error !== null) throw new ApiError("SERVER_ERROR", "Could not reset the room.");
+      // A finished game leaves the ROOM as 'in_game' on purpose: rooms only
+      // reach 'finished' when abandoned, and that releases the join code —
+      // which must not happen while players are still on the game-over screen.
+      run(
+        `update rooms set status = 'lobby', last_active_at = ?
+          where id = ? and status <> 'finished'`,
+        now,
+        roomId,
+      );
+    });
 
     notifyRoom(roomId, "restarted");
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

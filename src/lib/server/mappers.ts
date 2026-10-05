@@ -49,13 +49,13 @@ export interface RoundRowFull {
   readonly revealed_target: number | null;
   readonly active_points: number | null;
   readonly opponent_points: number | null;
-  readonly target_commitment: string;
+  readonly target_commitment: Uint8Array;
 }
 
 /**
  * Note what is NOT here: there is no branch that can emit the secret target.
- * `revealedTarget` comes from `rounds.revealed_target`, which the database
- * itself keeps NULL until the reveal transaction commits.
+ * `revealedTarget` comes from `rounds.revealed_target`, which stays NULL until
+ * the reveal transaction commits. The target itself is in `round_targets`.
  */
 export function toPublicRound(
   row: RoundRowFull,
@@ -77,6 +77,8 @@ export function toPublicRound(
       row.revealed_target === null ? null : stepsToPosition(row.revealed_target),
     activePoints: row.active_points,
     opponentPoints: row.opponent_points,
-    targetCommitment: row.target_commitment,
+    // Hex in Postgres' bytea notation, which is the format clients have
+    // always received.
+    targetCommitment: `\\x${Buffer.from(row.target_commitment).toString("hex")}`,
   };
 }

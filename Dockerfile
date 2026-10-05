@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
 # Multi-stage so the runtime image carries no pnpm store, no dev dependencies
-# and no source — just the standalone server Next emits.
+# and no source — just the built app, its production dependencies, and the
+# custom server that hosts the WebSocket endpoint.
 
 FROM node:22-slim AS base
 ENV PNPM_HOME="/pnpm" PATH="/pnpm:$PATH"
@@ -15,33 +16,38 @@ COPY package.json pnpm-lock.yaml ./
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
+FROM base AS prod-deps
+WORKDIR /app
+COPY package.json pnpm-lock.yaml ./
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --prod
+
 # ---- build -----------------------------------------------------------------
 FROM base AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# NEXT_PUBLIC_* values are inlined at build time, so they must be present here.
-# They are not secrets: the anon key is safe in a browser by design.
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
-    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
-    NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
 # ---- runtime ---------------------------------------------------------------
 FROM node:22-slim AS runtime
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0 \
+    DATABASE_PATH=/data/wavelength.db
 
-# Never run the server as root.
 RUN groupadd --system --gid 1001 nodejs \
- && useradd --system --uid 1001 --gid nodejs nextjs
+ && useradd --system --uid 1001 --gid nodejs nextjs \
+ && mkdir /data
 
-COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=build --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
+COPY --chown=nextjs:nodejs package.json next.config.ts ./
+COPY --chown=nextjs:nodejs server ./server
 
-USER nextjs
 EXPOSE 3000
-CMD ["node", "server.js"]
+# Never run the server as root. It starts as root only because Fly mounts the
+# volume at /data root-owned: take ownership of it, then drop to nextjs for
+# good before Node starts.
+CMD ["sh", "-c", "chown -R nextjs:nodejs /data && exec setpriv --reuid=nextjs --regid=nodejs --init-groups node --disable-warning=ExperimentalWarning server/index.mjs"]

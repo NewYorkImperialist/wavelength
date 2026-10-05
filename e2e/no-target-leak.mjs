@@ -5,9 +5,8 @@
  * This is the regression guard for requirement #11. The day someone adds
  * target_center to `rounds` "just for debugging", this fails.
  *
- *   ./scripts/dev-stack.sh    (terminal 1)
- *   pnpm dev                  (terminal 2)
- *   node e2e/no-target-leak.mjs
+ *   pnpm dev                  (terminal 1)
+ *   node e2e/no-target-leak.mjs   (terminal 2)
  */
 import { chromium } from "playwright";
 

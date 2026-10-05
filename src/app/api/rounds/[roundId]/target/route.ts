@@ -1,7 +1,8 @@
 import { POSITION_STEPS } from "@/lib/game/constants";
-import { serviceClient } from "@/lib/server/db";
+import { one } from "@/lib/server/db";
 import { ApiError, handleRoute } from "@/lib/server/errors";
-import { assertPhase, assertPsychic, type RoundRow } from "@/lib/server/guards";
+import { assertPhase, assertPsychic } from "@/lib/server/guards";
+import { loadRound } from "@/lib/server/loadRound";
 import { requireActor } from "@/lib/server/session";
 
 /**
@@ -30,16 +31,7 @@ export async function GET(
 ): Promise<Response> {
   return handleRoute(async () => {
     const { roundId } = await context.params;
-    const db = serviceClient();
-
-    const { data: round, error } = await db
-      .from("rounds")
-      .select("id, room_id, game_id, phase, active_team, psychic_player_id, needle_controller_id")
-      .eq("id", roundId)
-      .maybeSingle<RoundRow>();
-
-    if (error !== null) throw new ApiError("SERVER_ERROR", "Could not load the round.");
-    if (round === null) throw new ApiError("NOT_FOUND", "No such round.");
+    const round = loadRound(roundId);
 
     // Identity comes from the httpOnly cookie, never from the request.
     const actor = await requireActor(round.room_id);
@@ -49,12 +41,12 @@ export async function GET(
     assertPhase(round, "clue", "guess", "prediction");
     assertPsychic(round, actor);
 
-    const { data: steps, error: targetError } = await db.rpc("read_round_target", {
-      p_round_id: roundId,
-    });
-
-    if (targetError !== null) throw new ApiError("SERVER_ERROR", "Could not read the target.");
-    if (typeof steps !== "number") throw new ApiError("NOT_FOUND", "No target for this round.");
+    const target = one<{ target_center: number }>(
+      "select target_center from round_targets where round_id = ?",
+      roundId,
+    );
+    if (target === null) throw new ApiError("NOT_FOUND", "No target for this round.");
+    const steps = target.target_center;
 
     return Response.json(
       { targetCenter: steps / POSITION_STEPS },

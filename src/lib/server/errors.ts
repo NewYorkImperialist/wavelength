@@ -1,10 +1,7 @@
 import "server-only";
 
-import { isSupabaseConfigured } from "./env";
-
 /** Error codes the client can branch on, deliberately free of detail. */
 export type ApiErrorCode =
-  | "NOT_CONFIGURED"
   | "BAD_REQUEST"
   | "UNAUTHENTICATED"
   | "FORBIDDEN"
@@ -13,8 +10,6 @@ export type ApiErrorCode =
   | "SERVER_ERROR";
 
 const STATUS: Record<ApiErrorCode, number> = {
-  // 503: the server is fine, it just has no database wired up yet.
-  NOT_CONFIGURED: 503,
   BAD_REQUEST: 400,
   UNAUTHENTICATED: 401,
   FORBIDDEN: 403,
@@ -44,16 +39,6 @@ export class ApiError extends Error {
 export async function handleRoute(
   fn: () => Promise<Response>,
 ): Promise<Response> {
-  if (!isSupabaseConfigured()) {
-    return Response.json(
-      {
-        error: "NOT_CONFIGURED",
-        message:
-          "Supabase is not configured. Copy .env.example to .env.local and fill it in — or play at /local, which needs no database.",
-      },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
-    );
-  }
   try {
     return await fn();
   } catch (error) {

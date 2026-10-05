@@ -53,7 +53,7 @@ playwright-report/
 /shots/
 
 # local stack
-/supabase/local/postgrest.conf
+/data/
 
 # fly
 .fly/

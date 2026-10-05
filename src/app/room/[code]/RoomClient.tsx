@@ -7,7 +7,7 @@ import { WavelengthDial } from "@/components/dial/WavelengthDial";
 import type { GuessMarker } from "@/components/dial/GuessMarkers";
 import { Leaderboard, type LeaderboardRow } from "@/components/game/Leaderboard";
 import type { RoomStateDto } from "@/lib/server/roomState";
-import { useRoom, useStore } from "@/lib/realtime/useRoom";
+import { useRoom } from "@/lib/realtime/useRoom";
 
 import { Lobby } from "./Lobby";
 import { RoundPanel } from "./RoundPanel";
@@ -45,8 +45,6 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
     value: number;
   } | null>(null);
   const fetchedFor = useRef<string | null>(null);
-
-  useStore(room.needleStore);
 
   const call = useCallback(
     async (url: string, body?: unknown): Promise<boolean> => {
@@ -212,7 +210,6 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
             interactive={canGuess}
             onChange={(position) => {
               setNeedle({ roundId: round.id, position });
-              room.sendNeedle(position);
             }}
             onLock={() => {
               if (canGuess) void call(`/api/rounds/${round.id}/guess`, { position: myNeedle });

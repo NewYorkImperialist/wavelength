@@ -1,5 +1,5 @@
 import { MAX_CLUE_LENGTH } from "@/lib/game/constants";
-import { serviceClient } from "@/lib/server/db";
+import { nowIso, run } from "@/lib/server/db";
 import { notifyRoom } from "@/lib/server/broadcast";
 import { ApiError, handleRoute } from "@/lib/server/errors";
 import { assertPhase, assertPsychic } from "@/lib/server/guards";
@@ -38,17 +38,15 @@ export async function POST(
     // this same row. A clue written for the old card must not be recorded
     // against the replacement, which is what would happen if the skip landed
     // in the gap between reading the round above and updating it here.
-    const { data, error } = await serviceClient()
-      .from("rounds")
-      .update({ clue, clue_at: new Date().toISOString(), phase: "guess" })
-      .eq("id", roundId)
-      .eq("phase", "clue")
-      .eq("card_id", round.card_id)
-      .select("id")
-      .maybeSingle<{ id: string }>();
-
-    if (error !== null) throw new ApiError("SERVER_ERROR", "Could not save the clue.");
-    if (data === null) {
+    const saved = run(
+      `update rounds set clue = ?, clue_at = ?, phase = 'guess'
+        where id = ? and phase = 'clue' and card_id = ?`,
+      clue,
+      nowIso(),
+      roundId,
+      round.card_id,
+    );
+    if (saved === 0) {
       throw new ApiError(
         "CONFLICT",
         "The clue was already given, or the room skipped that card.",

@@ -4,7 +4,7 @@ import { randomInt } from "node:crypto";
 
 import { FREE_FOR_ALL_WINNING_SCORE } from "@/lib/game/constants";
 
-import { serviceClient } from "./db";
+import { all, isUniqueViolation, newId, nowIso, one, run, transaction } from "./db";
 import { ApiError } from "./errors";
 import { mintToken } from "./session";
 import type { DbTeam } from "./guards";
@@ -36,17 +36,13 @@ export function normaliseName(raw: unknown): string {
   return name;
 }
 
-async function nextSeat(roomId: string, team: DbTeam): Promise<number> {
-  const db = serviceClient();
-  const { data } = await db
-    .from("players")
-    .select("seat_order")
-    .eq("room_id", roomId)
-    .eq("team", team)
-    .order("seat_order", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ seat_order: number }>();
-  return (data?.seat_order ?? -1) + 1;
+function nextSeat(roomId: string, team: DbTeam): number {
+  const row = one<{ seat: number | null }>(
+    "select max(seat_order) as seat from players where room_id = ? and team = ?",
+    roomId,
+    team,
+  );
+  return (row?.seat ?? -1) + 1;
 }
 
 export interface JoinResult {
@@ -57,65 +53,59 @@ export interface JoinResult {
 }
 
 export async function createRoom(displayNameRaw: unknown): Promise<JoinResult> {
-  const db = serviceClient();
   const displayName = normaliseName(displayNameRaw);
 
   // Retry on collision rather than pre-checking: the partial unique index is
-  // the authority, and a check-then-insert would race.
+  // the authority on which codes are live.
   for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
     const code = generateCode();
-    const { data: room, error } = await db
-      .from("rooms")
-      .insert({ code, winning_score: FREE_FOR_ALL_WINNING_SCORE })
-      .select("id, code")
-      .single<{ id: string; code: string }>();
-
-    if (error !== null) {
-      if (error.code === "23505") continue; // code already live, try another
-      throw new ApiError("SERVER_ERROR", "Could not create the room.");
+    try {
+      return transaction(() => {
+        const roomId = newId();
+        run(
+          "insert into rooms (id, code, winning_score) values (?, ?, ?)",
+          roomId,
+          code,
+          FREE_FOR_ALL_WINNING_SCORE,
+        );
+        const player = insertPlayer(roomId, displayName, "a", true);
+        run("update rooms set host_player_id = ? where id = ?", player.playerId, roomId);
+        return { roomId, code, ...player };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) continue; // code already live, try another
+      throw error;
     }
-    if (room === null) throw new ApiError("SERVER_ERROR", "Could not create the room.");
-
-    const player = await insertPlayer(room.id, displayName, "a", true);
-    await db.from("rooms").update({ host_player_id: player.playerId }).eq("id", room.id);
-
-    return { roomId: room.id, code: room.code, ...player };
   }
 
   throw new ApiError("SERVER_ERROR", "Could not allocate a room code.");
 }
 
-async function insertPlayer(
+function insertPlayer(
   roomId: string,
   displayName: string,
   team: DbTeam,
   isHost: boolean,
-): Promise<{ playerId: string; token: string }> {
-  const db = serviceClient();
-  const seat = await nextSeat(roomId, team);
-
-  const { data: player, error } = await db
-    .from("players")
-    .insert({ room_id: roomId, display_name: displayName, team, is_host: isHost, seat_order: seat })
-    .select("id")
-    .single<{ id: string }>();
-
-  if (error !== null || player === null) {
-    throw new ApiError("SERVER_ERROR", "Could not add the player.");
-  }
+): { playerId: string; token: string } {
+  const playerId = newId();
+  run(
+    `insert into players (id, room_id, display_name, team, is_host, seat_order)
+     values (?, ?, ?, ?, ?, ?)`,
+    playerId,
+    roomId,
+    displayName,
+    team,
+    isHost ? 1 : 0,
+    nextSeat(roomId, team),
+  );
 
   const { token, hash } = mintToken();
-  const { error: sessionError } = await db.rpc("create_player_session", {
-    p_player_id: player.id,
-    p_token_hash: `\\x${hash.toString("hex")}`,
-  });
-  if (sessionError !== null) throw new ApiError("SERVER_ERROR", "Could not start a session.");
+  run("insert into player_sessions (player_id, token_hash) values (?, ?)", playerId, hash);
 
-  return { playerId: player.id, token };
+  return { playerId, token };
 }
 
 export async function joinRoom(codeRaw: unknown, displayNameRaw: unknown): Promise<JoinResult> {
-  const db = serviceClient();
   const displayName = normaliseName(displayNameRaw);
 
   if (typeof codeRaw !== "string") throw new ApiError("BAD_REQUEST", "A room code is required.");
@@ -124,38 +114,31 @@ export async function joinRoom(codeRaw: unknown, displayNameRaw: unknown): Promi
     throw new ApiError("BAD_REQUEST", "That is not a valid room code.");
   }
 
-  const { data: room, error } = await db
-    .from("rooms")
-    .select("id, code, status")
-    .eq("code", code)
-    .neq("status", "finished")
-    .maybeSingle<{ id: string; code: string; status: string }>();
+  // One transaction, so two people taking the last seat at once cannot both
+  // get it.
+  return transaction(() => {
+    const room = one<{ id: string; code: string; status: string }>(
+      "select id, code, status from rooms where code = ? and status <> 'finished'",
+      code,
+    );
+    if (room === null) throw new ApiError("NOT_FOUND", "No game with that code.");
+    if (room.status !== "lobby") {
+      throw new ApiError("CONFLICT", "That game has already started.");
+    }
 
-  if (error !== null) throw new ApiError("SERVER_ERROR", "Could not look up the room.");
-  if (room === null) throw new ApiError("NOT_FOUND", "No game with that code.");
-  if (room.status !== "lobby") {
-    throw new ApiError("CONFLICT", "That game has already started.");
-  }
+    const present = all<{ id: string }>(
+      "select id from players where room_id = ? and left_at is null",
+      room.id,
+    );
+    if (present.length >= MAX_PLAYERS) {
+      throw new ApiError("CONFLICT", "That room is full.");
+    }
 
-  const { count } = await db
-    .from("players")
-    .select("id", { count: "exact", head: true })
-    .eq("room_id", room.id)
-    .is("left_at", null);
+    // Everyone sits on one side: free-for-all has no teams, and the round
+    // machinery is built on a single active team.
+    const player = insertPlayer(room.id, displayName, "a", false);
+    run("update rooms set last_active_at = ? where id = ?", nowIso(), room.id);
 
-  if ((count ?? 0) >= MAX_PLAYERS) {
-    throw new ApiError("CONFLICT", "That room is full.");
-  }
-
-  // Everyone lands on one side by default. A pair or a trio can then start
-  // immediately and play co-op; splitting into two teams is a deliberate
-  // choice once there are four, not something a half-filled lobby falls into
-  // by accident. Auto-balancing instead would leave two players at one
-  // apiece, which is the single configuration that cannot be played.
-  const team: DbTeam = "a";
-
-  const player = await insertPlayer(room.id, displayName, team, false);
-  await db.from("rooms").update({ last_active_at: new Date().toISOString() }).eq("id", room.id);
-
-  return { roomId: room.id, code: room.code, ...player };
+    return { roomId: room.id, code: room.code, ...player };
+  });
 }

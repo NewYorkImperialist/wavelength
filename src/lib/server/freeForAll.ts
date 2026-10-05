@@ -3,7 +3,7 @@ import "server-only";
 import { POSITION_STEPS } from "@/lib/game/constants";
 import { scoreFreeForAllRound, type Guess } from "@/lib/game/free-for-all";
 
-import { serviceClient } from "./db";
+import { all, nowIso, one, run, transaction } from "./db";
 import { ApiError } from "./errors";
 
 /**
@@ -21,104 +21,67 @@ export interface GuessRow {
 }
 
 /** Everyone in the room who is expected to guess this round. */
-export async function expectedGuessers(
-  roomId: string,
-  psychicId: string,
-): Promise<string[]> {
-  const db = serviceClient();
-  const { data } = await db
-    .from("players")
-    .select("id")
-    .eq("room_id", roomId)
-    .is("left_at", null)
-    .neq("id", psychicId)
-    .returns<{ id: string }[]>();
-  return (data ?? []).map((player) => player.id);
+export function expectedGuessers(roomId: string, psychicId: string): string[] {
+  return all<{ id: string }>(
+    "select id from players where room_id = ? and left_at is null and id <> ?",
+    roomId,
+    psychicId,
+  ).map((player) => player.id);
 }
 
 /**
  * Score the round and publish it.
  *
- * Conditional on the round still being in `guess`, so several players
- * committing the last guess at once cannot double-score: one wins, the rest
- * find the round already revealed and simply re-read it.
+ * One transaction, conditional on the round still being in `guess`, so
+ * several players committing the last guess at once cannot double-score: one
+ * reveals, the rest find it already revealed and simply re-read it.
  */
-export async function revealFreeForAll(input: {
+export function revealFreeForAll(input: {
   roundId: string;
   roomId: string;
   psychicId: string;
-}): Promise<{ revealed: boolean }> {
-  const db = serviceClient();
+}): { revealed: boolean } {
+  return transaction(() => {
+    const target = one<{ target_center: number }>(
+      "select target_center from round_targets where round_id = ?",
+      input.roundId,
+    );
+    if (target === null) throw new ApiError("NOT_FOUND", "No target for this round.");
 
-  const { data: targetData, error: targetError } = await db.rpc("take_round_target", {
-    p_round_id: input.roundId,
-  });
-  if (targetError !== null) throw new ApiError("SERVER_ERROR", "Could not read the target.");
-  const target = (targetData as { target_center: number }[] | null)?.[0];
-  if (target === undefined) throw new ApiError("NOT_FOUND", "No target for this round.");
+    const claimed = run(
+      `update rounds set phase = 'reveal', revealed_target = ?, revealed_at = ?
+        where id = ? and phase = 'guess'`,
+      target.target_center,
+      nowIso(),
+      input.roundId,
+    );
+    if (claimed === 0) return { revealed: false };
 
-  const { data: rows } = await db
-    .from("round_guesses")
-    .select("player_id, position, points")
-    .eq("round_id", input.roundId)
-    .returns<GuessRow[]>();
+    const guesses: Guess[] = all<GuessRow>(
+      "select player_id, position, points from round_guesses where round_id = ?",
+      input.roundId,
+    ).map((row) => ({ playerId: row.player_id, position: row.position / POSITION_STEPS }));
 
-  const guesses: Guess[] = (rows ?? []).map((row) => ({
-    playerId: row.player_id,
-    position: row.position / POSITION_STEPS,
-  }));
+    const awards = scoreFreeForAllRound(
+      target.target_center / POSITION_STEPS,
+      input.psychicId,
+      guesses,
+    );
 
-  const awards = scoreFreeForAllRound(
-    target.target_center / POSITION_STEPS,
-    input.psychicId,
-    guesses,
-  );
-
-  // Claim the reveal. Zero rows means someone else got there first — but a
-  // database ERROR means the write was rejected, which is a different thing
-  // entirely and must not be swallowed as a lost race. Conflating the two hid
-  // a constraint violation that stopped every round revealing.
-  const { data: claimed, error: claimError } = await db
-    .from("rounds")
-    .update({
-      phase: "reveal",
-      revealed_target: target.target_center,
-      revealed_at: new Date().toISOString(),
-    })
-    .eq("id", input.roundId)
-    .eq("phase", "guess")
-    .select("id")
-    .maybeSingle<{ id: string }>();
-
-  if (claimError !== null) {
-    throw new ApiError("SERVER_ERROR", `Could not reveal the round: ${claimError.message}`);
-  }
-  if (claimed === null) return { revealed: false };
-
-  await Promise.all(
-    awards.map(async (award) => {
+    for (const award of awards) {
       if (!award.isPsychic) {
-        await db
-          .from("round_guesses")
-          .update({ points: award.points })
-          .eq("round_id", input.roundId)
-          .eq("player_id", award.playerId);
+        run(
+          "update round_guesses set points = ? where round_id = ? and player_id = ?",
+          award.points,
+          input.roundId,
+          award.playerId,
+        );
       }
       if (award.points > 0) {
-        // Read-modify-write is safe here: this runs once per round, inside the
-        // single request that won the claim above.
-        const { data: player } = await db
-          .from("players")
-          .select("score")
-          .eq("id", award.playerId)
-          .maybeSingle<{ score: number }>();
-        await db
-          .from("players")
-          .update({ score: (player?.score ?? 0) + award.points })
-          .eq("id", award.playerId);
+        run("update players set score = score + ? where id = ?", award.points, award.playerId);
       }
-    }),
-  );
+    }
 
-  return { revealed: true };
+    return { revealed: true };
+  });
 }

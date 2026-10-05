@@ -4,7 +4,7 @@
  * Four players in four cookie jars, exercising every route handler and every
  * guard. No browser: this is about the server being correct, not the UI.
  *
- *   ./scripts/dev-stack.sh      (postgres + postgrest + proxy + next)
+ *   pnpm dev                    (in another terminal)
  *   node scripts/e2e-api.mjs
  */
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";

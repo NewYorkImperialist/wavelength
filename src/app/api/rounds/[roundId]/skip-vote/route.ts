@@ -1,6 +1,7 @@
 import { notifyRoom } from "@/lib/server/broadcast";
 import { ApiError, handleRoute } from "@/lib/server/errors";
 import { assertPhase } from "@/lib/server/guards";
+import { transaction } from "@/lib/server/db";
 import { loadRoundAndActor } from "@/lib/server/loadRound";
 import { resolveSkipVotes, setSkipVote } from "@/lib/server/skipVote";
 
@@ -39,20 +40,16 @@ export async function POST(
       throw new ApiError("BAD_REQUEST", "Say whether you are voting to skip.");
     }
 
-    await setSkipVote({
-      roundId,
-      playerId: actor.playerId,
-      cardId: round.card_id,
-      voting,
-    });
-
-    // The vote and the decision are one request: there is nothing else to
+    // The vote and the decision are one transaction: there is nothing else to
     // press, and a tally that carried but sat waiting would just be a stall.
-    const { tally, skipped } = await resolveSkipVotes({
-      roomId: round.room_id,
-      roundId,
-      gameId: round.game_id,
-      cardId: round.card_id,
+    const { tally, skipped } = transaction(() => {
+      setSkipVote({ roundId, playerId: actor.playerId, cardId: round.card_id, voting });
+      return resolveSkipVotes({
+        roomId: round.room_id,
+        roundId,
+        gameId: round.game_id,
+        cardId: round.card_id,
+      });
     });
 
     notifyRoom(round.room_id, skipped ? "card-skipped" : "skip-vote");

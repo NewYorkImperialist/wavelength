@@ -1,47 +1,36 @@
 # Deploying to Fly.io
 
-The server holds no state. Everything lives in Supabase, and clients are
-notified through Supabase Realtime rather than in-process memory, so machines
-can scale out, restart or move region without disturbing a game.
+One machine runs everything: the Next.js app, the WebSocket endpoint, and a
+SQLite database in a file on a Fly volume. There is no external service to
+configure, pay for, or have paused for inactivity.
 
 ## One-time setup
 
 ```bash
 fly auth login
 fly apps create wave-length --org personal
+fly volumes create wavelength_data --region iad --size 1
 ```
 
-`--copy-config` keeps the `fly.toml` in this repo rather than generating a new
-one. Pick a region near your players; latency shows up directly in how quickly
-the needle moves for everyone else.
+The volume must be in the app's `primary_region`. 1 GB is far more than a
+party game will ever write. Fly snapshots volumes daily and keeps them for 5
+days by default; `fly volumes snapshots list <volume-id>` shows them.
 
-## Secrets
+Then `fly deploy`. There are no secrets and no build arguments.
 
-Two of the four values are compiled into the browser bundle and two must never
-leave the server.
+## Exactly one machine
 
-**Server-only** — set as Fly secrets, encrypted at rest and injected at runtime:
+A volume belongs to a single machine, so a second machine would get its own,
+separate, empty database: players on one would not see rooms created on the
+other. `fly.toml` therefore never auto-stops, and the app must stay at one:
 
 ```bash
-fly secrets set SUPABASE_SERVICE_ROLE_KEY="..."
+fly scale count 1
 ```
 
-That is the only server secret. Realtime uses broadcast on the anon key and
-the server's change notifications carry no data, so there are no custom tokens
-to sign and no JWT secret to manage.
-
-**Public** — inlined at build time, so they are `--build-arg`, not secrets.
-The anon key is designed to be public: it holds no write grant on any table,
-and every read is gated by row level security.
-
-```bash
-fly deploy \
-  --build-arg NEXT_PUBLIC_SUPABASE_URL="https://xxxx.supabase.co" \
-  --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJ..."
-```
-
-Putting the public values in `fly.toml` under `[build.args]` avoids retyping
-them on every deploy.
+A deploy restarts that machine in place, a gap of several seconds. Games in
+progress survive it — everything is on disk — and clients reconnect their
+socket on their own, polling in the meantime.
 
 ## Custom domain
 
@@ -71,30 +60,32 @@ DNS lives at the registrar (Spaceship). Both hosts point at the app's IPs —
 ```bash
 BASE_URL=https://wavelength.jaydenlin.net node scripts/e2e-api.mjs
 BASE_URL=https://wavelength.jaydenlin.net node e2e/no-target-leak.mjs
+BASE_URL=https://wavelength.jaydenlin.net node e2e/free-for-all.mjs
 ```
 
-Both suites take a `BASE_URL`, so the same assertions that guard local
+All three suites take a `BASE_URL`, so the same assertions that guard local
 development can be run against production — including the leak sweep.
+
+## Looking at the database
+
+```bash
+fly ssh console -C "node -e \"const {DatabaseSync}=require('node:sqlite'); \
+  const db=new DatabaseSync('/data/wavelength.db'); \
+  console.table(db.prepare('select code, status, created_at from rooms order by rowid desc limit 10').all())\""
+```
 
 ## Things that bite
 
-**Cold starts.** `auto_stop_machines = "suspend"` with `min_machines_running = 1`
-keeps one machine warm. A party game gets opened by several people within a few
-seconds of each other, and a cold start on the first click is the worst
-possible first impression. Dropping to zero saves very little.
+**The volume is root-owned.** Fly mounts it as root, so the container starts as
+root only long enough to `chown /data`, then drops to an unprivileged user
+before Node starts. See the `CMD` in the `Dockerfile`.
 
 **HTTPS is required, not optional.** Session cookies are set `Secure` in
 production, so over plain HTTP nobody can join. `force_https` handles it.
 
-**Build args are baked in.** Changing a `NEXT_PUBLIC_*` value needs a rebuild,
-not just a secret update — those strings are compiled into the JavaScript.
+**Concurrency counts connections.** Every open game tab holds a WebSocket, so
+`fly.toml` limits by connections rather than requests.
 
-**Region.** Every mutation is a round trip to your Supabase region, and the
-reveal is several. Put the Fly app near the database, not near yourself.
-
-**NEXT_PUBLIC_ values are inlined at BUILD time, by static text substitution.**
-So they must be read as `process.env.NEXT_PUBLIC_SUPABASE_URL` written out in
-full. A computed lookup like `process.env[name]` is not substituted and reads
-as undefined inside the container — while working perfectly in development,
-where `.env.local` populates `process.env` for real. That cost one deploy;
-`src/lib/server/__tests__/env.test.ts` now fails the build if it recurs.
+**The schema migrates itself.** `server/schema.mjs` holds the migrations and
+SQLite's `user_version` records how far a database has got; the server applies
+the rest on boot. Append a migration — never edit one that has shipped.

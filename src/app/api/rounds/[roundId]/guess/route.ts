@@ -1,8 +1,8 @@
 import { notifyRoom } from "@/lib/server/broadcast";
-import { serviceClient } from "@/lib/server/db";
+import { isUniqueViolation, one, run, transaction } from "@/lib/server/db";
 import { ApiError, handleRoute } from "@/lib/server/errors";
 import { assertPhase } from "@/lib/server/guards";
-import { loadRoundAndActor } from "@/lib/server/loadRound";
+import { loadRound, loadRoundAndActor } from "@/lib/server/loadRound";
 import { expectedGuessers, revealFreeForAll } from "@/lib/server/freeForAll";
 import { positionToStepsDb } from "@/lib/server/mappers";
 
@@ -24,7 +24,6 @@ export async function POST(
   return handleRoute(async () => {
     const { roundId } = await context.params;
     const { round, actor } = await loadRoundAndActor(roundId);
-    const db = serviceClient();
 
     assertPhase(round, "guess");
     // The Psychic knows where the target is, so they never guess.
@@ -38,33 +37,41 @@ export async function POST(
       throw new ApiError("BAD_REQUEST", "A needle position is required.");
     }
 
-    // Once committed, a guess is final — otherwise you could wait to see the
-    // reveal stall and keep adjusting.
-    const { error } = await db.from("round_guesses").insert({
-      round_id: roundId,
-      player_id: actor.playerId,
-      position: positionToStepsDb(position),
-    });
+    transaction(() => {
+      // Re-checked inside the transaction: the round may have revealed while
+      // this request was authenticating.
+      if (loadRound(roundId).phase !== "guess") {
+        throw new ApiError("CONFLICT", "That round has already been revealed.");
+      }
 
-    if (error !== null) {
-      if (error.code === "23505") throw new ApiError("CONFLICT", "You already locked in.");
-      throw new ApiError("SERVER_ERROR", "Could not record your guess.");
-    }
+      // Once committed, a guess is final — otherwise you could wait to see
+      // the reveal stall and keep adjusting.
+      try {
+        run(
+          "insert into round_guesses (round_id, player_id, position) values (?, ?, ?)",
+          roundId,
+          actor.playerId,
+          positionToStepsDb(position),
+        );
+      } catch (error) {
+        if (isUniqueViolation(error)) throw new ApiError("CONFLICT", "You already locked in.");
+        throw error;
+      }
 
-    // Reveal when nobody is left to wait for.
-    const waitingFor = await expectedGuessers(round.room_id, round.psychic_player_id);
-    const { count: committed } = await db
-      .from("round_guesses")
-      .select("player_id", { count: "exact", head: true })
-      .eq("round_id", roundId);
-
-    if ((committed ?? 0) >= waitingFor.length) {
-      await revealFreeForAll({
+      // Reveal when nobody is left to wait for.
+      const waitingFor = expectedGuessers(round.room_id, round.psychic_player_id);
+      const committed = one<{ n: number }>(
+        "select count(*) as n from round_guesses where round_id = ?",
         roundId,
-        roomId: round.room_id,
-        psychicId: round.psychic_player_id,
-      });
-    }
+      );
+      if ((committed?.n ?? 0) >= waitingFor.length) {
+        revealFreeForAll({
+          roundId,
+          roomId: round.room_id,
+          psychicId: round.psychic_player_id,
+        });
+      }
+    });
 
     notifyRoom(round.room_id, "guess");
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

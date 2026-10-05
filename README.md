@@ -64,18 +64,18 @@ two teams once there are four.
 ## Architecture
 
 ```
-src/lib/game/        Pure engine. No React, no Next, no Supabase, no node built-ins.
+src/lib/game/        Pure engine. No React, no Next, no database, no node built-ins.
   constants.ts       Dial geometry, wedge widths, WINNING_SCORE — every magic number, named.
   geometry.ts        Normalized position <-> angle <-> SVG coordinates, arc path building.
   scoring.ts         The ONE authoritative implementation of the scoring rules.
   target.ts          Target generation (RNG injected, never Math.random).
   deck.ts            ~60 original spectrum cards, data only.
   state-machine.ts   transition(room, action) -> { ok, state, effects }
-src/lib/server/      import "server-only". Service-role client, auth, guards, round creation.
-src/lib/realtime/    Supabase channel hooks and the needle store.
+src/lib/server/      import "server-only". Database access, auth, guards, round creation.
+src/lib/realtime/    The room hook: WebSocket pings, presence, polling fallback.
 src/components/dial/ The SVG device.
 src/app/             Landing page, /room/[code], /local, /api/**
-supabase/migrations/
+server/              The custom server: Next + the /ws endpoint, SQLite, the schema.
 ```
 
 ### The engine is pure, and that is load-bearing
@@ -110,27 +110,17 @@ state. There is a test that asserts exactly this.
 ## Keeping the target secret
 
 The requirement is that a non-Psychic cannot find the target *by any means* before the reveal —
-not through the DOM, the network, a direct Supabase query, or a realtime message.
+not through the DOM, the network, or a realtime message.
 
 **The `rounds` table has no target column while the round is live.** The secret lives in a
-separate `private` Postgres schema, and `rounds.revealed_target_center` is genuinely `NULL` in
-the database until the reveal transaction commits. The leak is closed by *absence of data*, not
-by a filter.
+separate `round_targets` table that only three pieces of code name — round creation, the
+Psychic's target endpoint, and the reveal — and `rounds.revealed_target` is genuinely `NULL` until
+the reveal transaction commits. The leak is closed by *absence of data*, not by a filter: no
+query of `rounds`, however careless, can return the secret.
 
-Three independent barriers, any one of which is sufficient:
-
-1. **PostgREST cannot address it.** `private` is not in the exposed-schemas list, so
-   `GET /rest/v1/round_targets` returns `PGRST106` regardless of grants or policies.
-2. **No grant.** `anon` and `authenticated` have neither `USAGE` on the schema nor `SELECT` on
-   the table.
-3. **Not in the realtime publication**, so no WAL record for it ever reaches the Realtime server.
-
-> **Why not just a protected column on `rounds`?** Because Realtime's `postgres_changes` RLS
-> check is **row-level only** and does not honour column privileges. The WAL record carries every
-> column of the row, so every subscriber would receive the target in the payload even though a
-> REST `SELECT` of that column would 403. The invariant to hold in review is: **if it must not be
-> seen, it does not live in a table that is in the realtime publication.** Session token hashes
-> get the same treatment.
+Nothing reaches a browser except through the API routes, and every room-state response goes
+through one allow-list mapper. The WebSocket carries no game data at all — only "something
+changed" pings and who is online.
 
 The Psychic fetches the target from `GET /api/rounds/:id/target`, **from a client component after
 hydration** — never from a Server Component, because RSC flight data is embedded in the page HTML
@@ -147,13 +137,11 @@ local/session storage, or the React tree.
 
 Clients are never trusted to generate targets, compute scores, change phase, or declare a winner.
 
-Every mutation goes through a Next.js route handler using the service-role key. `anon` and
-`authenticated` hold **no** INSERT/UPDATE/DELETE grant anywhere. Each transition is a
-*conditional* update gated on the current phase, so two concurrent actions race safely — one
-wins, the other gets a 409, and no table locks are needed.
-
-Reads go straight from the browser to Supabase using a short-lived JWT carrying a `room_id`
-claim, so RLS scopes every read to your own room.
+Every mutation goes through a Next.js route handler, and browsers never touch the database.
+Each transition runs in a single synchronous SQLite transaction gated on the current phase, so
+two concurrent actions race safely — one wins, the other gets a 409. Because `node:sqlite` is
+synchronous and the server is one process, a transaction with no `await` inside it cannot
+interleave with another request at all.
 
 Players are anonymous: the server mints a 256-bit session token, stores only its SHA-256, and
 sets it as an **httpOnly** cookie — so an XSS bug cannot steal a session and impersonate the
@@ -163,28 +151,26 @@ Psychic. The display name is never an identifier.
 
 ## Realtime
 
-Split by frequency, because the needle is the only high-rate thing in the game:
+One WebSocket per player, served by the same process as the app (`server/index.mjs`), carrying:
 
-| What | Mechanism |
+| What | Message |
 |---|---|
-| Anything changed | `broadcast` — a bare ping from the server, carrying **no data** |
-| Needle dragging (~20 Hz) | `broadcast`, client to client — **zero database writes** |
-| Who is connected | `presence` |
+| Anything changed | `changed` — a bare ping from the server, carrying **no data** |
+| Who is connected | `presence` — the player ids with the room open |
 
-A change notification carries no game state at all: clients react by
-re-fetching `/api/rooms/:id/state`, which is the single place that decides what
-a given player may see. A ping cannot leak; a row payload can.
+A change notification carries no game state: clients react by re-fetching
+`/api/rooms/:id/state`, which is the single place that decides what a given
+player may see. A ping cannot leak; a row payload can.
 
-This deliberately avoids `postgres_changes`, which would require every browser
-to hold a token whose claims satisfy the RLS policies — meaning custom JWTs
-signed with the project's JWT secret, plus refresh handling. Since the client
-never reads Supabase directly, that machinery bought nothing, and it does not
-work at all on projects using asymmetric signing keys.
+The socket is authenticated by the same httpOnly session cookie the API uses,
+and refused for anyone not seated in the room or connecting from another site.
+
+Dial dragging is deliberately **not** relayed. Everyone guesses on their own
+dial, and broadcasting it live would hand a late guesser everyone else's
+answer — exactly what the room state withholds until the reveal.
 
 A refreshing player rebuilds everything from one endpoint, `GET /api/rooms/:id/state`. The
-Psychic re-fetches the target on mount, as many times as needed, until the reveal. The in-flight
-needle position is deliberately not in the database; it is recovered by a peer echo, falling back
-to dial centre.
+Psychic re-fetches the target on mount, as many times as needed, until the reveal.
 
 ---
 
@@ -202,17 +188,9 @@ pnpm dev
 
 ### Multiplayer
 
-Needs a Postgres + Realtime stack. Locally:
-
-```bash
-brew install supabase/tap/supabase
-brew install --cask docker      # or: brew install colima docker && colima start
-supabase start                  # prints the URL, anon key, service_role key and JWT secret
-cp .env.example .env.local      # paste them in
-supabase db push
-```
-
-Then `pnpm dev` and open `http://localhost:3000`.
+Nothing to set up. `pnpm dev` runs the custom server, which creates a SQLite
+database at `data/wavelength.db` on first use (set `DATABASE_PATH` to put it
+elsewhere). Open `http://localhost:3000`.
 
 ---
 
@@ -223,50 +201,27 @@ pnpm test        # vitest
 pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint, including the engine purity boundary
 pnpm check       # all three
-pnpm db:test     # apply the migrations to a throwaway DB and attack them
-pnpm db:push     # apply pending migrations to the real project
-pnpm test:api    # play a full game over HTTP against a real database
+pnpm test:api    # play a full game over HTTP against a running server
 pnpm test:leak   # four real browsers; hunt the target through every channel
 pnpm test:ffa    # four real browsers; a full free-for-all round
 ```
 
-### A Supabase-compatible stack without Docker
+The three end-to-end suites take a `BASE_URL` and default to
+`http://localhost:3000`, so run `pnpm dev` first — or point them at production.
 
-Supabase's REST API *is* PostgREST, and its anon/service_role "keys" are
-ordinary JWTs naming a Postgres role. So Postgres + PostgREST + a small
-path-rewriting proxy exercises every route handler, grant and RLS policy for
-real, in about 150MB instead of several gigabytes:
-
-```bash
-brew install postgresql@17 postgrest
-brew services start postgresql@17
-pnpm dev:stack          # migrations, keys, PostgREST, proxy, .env.local
-pnpm dev                # in another terminal
-pnpm test:api
-```
-
-`pnpm test:api` runs four players through three complete rounds in four cookie
+`pnpm test:api` runs four players through complete rounds in four cookie
 jars, asserting every guard: that only the Psychic receives the target and
 everyone else gets a 403 in every phase, that the target appears nowhere in
 public state until the reveal, that refusals leak nothing, that the Psychic
-cannot touch the dial, that the guessing team cannot call left/right, that a
-locked guess cannot be moved, that a clue cannot be rewritten, that teams
-freeze at kickoff, and that a forged cookie is rejected. Scores are re-derived
-independently and compared with what the server stored.
+cannot guess, that a locked guess cannot be moved, that a clue cannot be
+rewritten, that a vote-skip deals a fresh card and commitment, and that a
+forged cookie is rejected. Scores are re-derived independently and compared
+with what the server stored.
 
-**Realtime is the one thing this cannot cover** — it is a separate service, so
-subscriptions still need a real Supabase project.
-
-`pnpm db:test` needs only a plain PostgreSQL (`brew install postgresql@17 &&
-brew services start postgresql@17`) — a small harness stands in for the
-Supabase roles and the realtime publication. It applies every migration, seeds
-the deck, and then runs fourteen adversarial assertions: that no private table
-is published to Realtime, that `rounds.revealed_target` is NULL during play,
-that neither `anon` nor `authenticated` can reach the secret table or the
-`SECURITY DEFINER` functions, that RLS scopes reads to one room, that a token
-with no room claim sees nothing, and that browsers cannot write at all. The
-suite is checked against a deliberate hole to confirm it is not passing
-vacuously.
+`src/lib/server/__tests__/database.test.ts` runs the data layer against an
+in-memory SQLite: that the target never lands in `rounds` and matches its
+published commitment, that a reveal scores exactly once, and that a reroll
+moves card, target and commitment together or not at all.
 
 The engine tests are exhaustive by design — every scoring boundary is pinned, `scoreNeedle(t, t)`
 is checked at all 2001 grid positions, and the state machine is fuzzed to prove it never throws.
@@ -277,10 +232,8 @@ boundary is ever flaky.
 
 ## Deployment
 
-Vercel-compatible. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-`SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_JWT_SECRET`. The last two are server-only — the absence
-of a `NEXT_PUBLIC_` prefix is what keeps Next from inlining them into the client bundle, and
-`import "server-only"` in `src/lib/server/` turns any accidental client import into a build error.
+Fly.io, one machine with a volume holding the SQLite file — see
+[docs/deploy.md](docs/deploy.md). There are no secrets to configure.
 
 ---
 
@@ -290,15 +243,13 @@ of a `NEXT_PUBLIC_` prefix is what keeps Next from inlining them into the client
 asked not to gesture or use the words on the dial, but nothing stops them.
 That is true of the physical game too.
 
-**Polling is the floor, not the ceiling.** If realtime is unavailable — a
-blocked WebSocket, a dropped connection, a project without it — the room falls
-back to polling every 2s and stays fully playable. Only live needle dragging
-is lost, and the locked position was always the authoritative one.
+**Polling is the floor, not the ceiling.** If the WebSocket is unavailable — a
+blocking proxy, a dropped connection, the server restarting for a deploy — the
+room falls back to polling every 2s and stays fully playable.
 
-**Reconnect during the guessing phase is best-effort.** The live needle position
-is intentionally not persisted. It is recovered by peer echo, so if every
-player refreshes at the same moment the needle returns to the dial centre. The
-team simply places it again; the alternative is writing ~20 rows a second.
+**One machine.** The database is a file on that machine's volume, so the app
+cannot scale out to a second one. For a party game that is plenty, and it is
+what makes everything else simple.
 
 **Sudden death plays a full pair of turns.** Each team takes exactly one turn per
 sudden-death round, which is the published rule, but it means a round can end

@@ -8,7 +8,7 @@ const eslintConfig = defineConfig([
 
   // The game engine is pure: it must run identically on the server (for
   // authority) and in the browser (for optimistic display). Nothing in it may
-  // reach for React, Next, Supabase or Node built-ins.
+  // reach for React, Next, a database or Node built-ins.
   {
     files: ["src/lib/game/**/*.ts"],
     // The purity tests read the engine source off disk to enforce this very
@@ -20,7 +20,6 @@ const eslintConfig = defineConfig([
         {
           patterns: [
             { group: ["react", "react-dom", "next", "next/*"], message: "src/lib/game must stay React/Next-free." },
-            { group: ["@supabase/*"], message: "src/lib/game must stay I/O-free." },
             { group: ["node:*", "server-only"], message: "src/lib/game must run in the browser too." },
             { group: ["@/lib/server/*", "@/components/*", "@/app/*"], message: "The engine may not depend on outer layers." },
           ],

@@ -1,21 +1,26 @@
 # Fly.io deployment for Wavelength.
 #
-# The server is stateless — every bit of game state lives in Supabase, and
-# change notifications go through Supabase Realtime rather than in-process
-# memory. So machines can scale out, restart or move region freely without
-# disturbing a game in progress.
+# One machine, one SQLite file on a volume, WebSockets served by the same
+# process. Everything a game needs lives on that machine, which is what makes
+# it simple — and why it must stay at exactly one machine: a volume belongs to
+# a single machine, so a second one would have its own, different database.
 
 app = "wave-length"
 primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile"
-  [build.args]
-    # Inlined into the client bundle at build time. Neither is secret: the anon
-    # key is designed to be public and holds no write grant on any table.
-    # Set these with: fly deploy --build-arg NEXT_PUBLIC_SUPABASE_URL=...
-    NEXT_PUBLIC_SUPABASE_URL = ""
-    NEXT_PUBLIC_SUPABASE_ANON_KEY = ""
+
+[deploy]
+  # A volume cannot be attached to two machines at once, so there is no
+  # blue-green: the one machine restarts in place, a gap of several seconds.
+  # Games survive it (they are on disk) and clients reconnect on their own,
+  # polling in the meantime.
+  strategy = "rolling"
+
+[mounts]
+  source = "wavelength_data"
+  destination = "/data"
 
 [env]
   PORT = "3000"
@@ -25,14 +30,15 @@ primary_region = "iad"
   force_https = true
   # Session cookies are Secure in production, so HTTPS is not optional.
 
-  auto_stop_machines = "suspend"
+  # Never stop. Open WebSockets are the whole point, and the one machine is
+  # also the only copy of the database being served.
+  auto_stop_machines = "off"
   auto_start_machines = true
-  # Keep one machine warm: a party game is opened by several people at once,
-  # and a cold start on the first click is the worst possible first impression.
   min_machines_running = 1
 
   [http_service.concurrency]
-    type = "requests"
+    # Connections, not requests: an idle WebSocket still occupies one.
+    type = "connections"
     soft_limit = 200
     hard_limit = 250
 

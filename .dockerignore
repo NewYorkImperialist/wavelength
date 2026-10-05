@@ -9,5 +9,5 @@ test-results/
 playwright-report/
 e2e/
 scripts/screenshot.mjs
-supabase/local/
+data/
 *.log

@@ -24,7 +24,7 @@ export async function POST(
     assertPhase(round, "guess");
     assertHost(actor);
 
-    const { revealed } = await revealFreeForAll({
+    const { revealed } = revealFreeForAll({
       roundId,
       roomId: round.room_id,
       psychicId: round.psychic_player_id,
