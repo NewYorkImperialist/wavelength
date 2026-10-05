@@ -14,18 +14,18 @@ const nextConfig: NextConfig = {
 
   /**
    * One canonical host. The session cookie is host-only, so a player who
-   * joined on www. and later lands on the bare subdomain would lose their
-   * seat in the room.
+   * joined on www. (or the old fly.dev address) and later lands on the bare
+   * subdomain would lose their seat in the room.
    */
   async redirects() {
-    return [
-      {
+    return ["www.wavelength.jaydenlin.net", "wave-length.fly.dev"].map(
+      (host) => ({
         source: "/:path*",
-        has: [{ type: "host", value: "www.wavelength.jaydenlin.net" }],
+        has: [{ type: "host" as const, value: host }],
         destination: "https://wavelength.jaydenlin.net/:path*",
         permanent: true,
-      },
-    ];
+      }),
+    );
   },
 };
 

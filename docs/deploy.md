@@ -45,8 +45,9 @@ them on every deploy.
 
 ## Custom domain
 
-The game is served at `wavelength.jaydenlin.net`; `www.wavelength.jaydenlin.net`
-308-redirects to it (see `next.config.ts`). Fly issues the TLS certificates:
+The game is served at `wavelength.jaydenlin.net`. Both
+`www.wavelength.jaydenlin.net` and the old `wave-length.fly.dev` 308-redirect
+to it (see `next.config.ts`). Fly issues the TLS certificates:
 
 ```bash
 fly certs add wavelength.jaydenlin.net
