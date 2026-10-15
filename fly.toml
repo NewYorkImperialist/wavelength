@@ -30,11 +30,14 @@ primary_region = "iad"
   force_https = true
   # Session cookies are Secure in production, so HTTPS is not optional.
 
-  # Never stop. Open WebSockets are the whole point, and the one machine is
-  # also the only copy of the database being served.
-  auto_stop_machines = "off"
+  # Autosuspend when idle; the next request wakes it from a RAM snapshot in
+  # well under a second. An open WebSocket counts as an active connection, so
+  # a machine with anyone in a game never goes idle. Games live in SQLite on
+  # the volume, so nothing is lost either way. min_machines_running must be 0
+  # or the single machine is never allowed to suspend.
+  auto_stop_machines = "suspend"
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
 
   [http_service.concurrency]
     # Connections, not requests: an idle WebSocket still occupies one.
@@ -44,4 +47,4 @@ primary_region = "iad"
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "512mb"
+  memory = "256mb"
