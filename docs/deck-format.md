@@ -1,6 +1,6 @@
 # Using your own spectrum deck
 
-The built-in deck in `src/lib/game/deck.ts` is 120 original spectrums. The
+The built-in deck in `src/lib/game/deck.ts` is 206 original spectrums. The
 printed text of the commercial game is copyrighted and is not included, but
 nothing stops you from playing with your own list — including one you transcribe
 from a copy you own. Keep that file out of version control if it isn't yours to

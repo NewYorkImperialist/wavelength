@@ -175,6 +175,124 @@ export const SPECTRUM_DECK: readonly SpectrumCard[] = [
   { id: "c118", left: "Fun to lose", right: "Only fun to win" },
   { id: "c119", left: "Simple rules", right: "Rulebook the size of a novel" },
   { id: "c120", left: "Spectator sport", right: "Only fun to play" },
+
+  // Everyday life
+  { id: "c121", left: "Morning person", right: "Night owl" },
+  { id: "c122", left: "Easy to find", right: "Always lost" },
+  { id: "c123", left: "Done every day", right: "Done once a lifetime" },
+  { id: "c124", left: "Better alone", right: "Better with friends" },
+  { id: "c125", left: "Weekday activity", right: "Weekend activity" },
+  { id: "c126", left: "Fine to skip", right: "Never skip it" },
+
+  // Home and living
+  { id: "c127", left: "Belongs in the kitchen", right: "Belongs in the garage" },
+  { id: "c128", left: "Minimalist", right: "Maximalist" },
+  { id: "c129", left: "Cosy home", right: "Showroom home" },
+  { id: "c130", left: "Easy to clean", right: "Impossible to clean" },
+  { id: "c131", left: "Good houseguest", right: "Nightmare houseguest" },
+
+  // Childhood
+  { id: "c132", left: "Kids love it", right: "Kids hate it" },
+  { id: "c133", left: "Childish", right: "Mature" },
+  { id: "c134", left: "Fun at 8", right: "Fun at 80" },
+  { id: "c135", left: "Parents approve", right: "Parents would ground you" },
+  { id: "c136", left: "Playground legend", right: "Playground nobody" },
+
+  // Internet and phones
+  { id: "c137", left: "Goes viral", right: "Nobody sees it" },
+  { id: "c138", left: "Online friend", right: "Real-life friend" },
+  { id: "c139", left: "Group chat", right: "Phone call" },
+  { id: "c140", left: "Doom scroll", right: "Time well spent" },
+  { id: "c141", left: "Ancient meme", right: "Fresh meme" },
+  { id: "c142", left: "Wholesome internet", right: "Cursed internet" },
+
+  // Music and sound
+  { id: "c143", left: "Wedding song", right: "Funeral song" },
+  { id: "c144", left: "Gym music", right: "Study music" },
+  { id: "c145", left: "Karaoke disaster", right: "Karaoke triumph" },
+  { id: "c146", left: "One-hit wonder", right: "Legendary career" },
+  { id: "c147", left: "Soothing sound", right: "Nails on a chalkboard" },
+
+  // Sports and fitness
+  { id: "c148", left: "Not a sport", right: "Definitely a sport" },
+  { id: "c149", left: "Gentle exercise", right: "Extreme sport" },
+  { id: "c150", left: "Team player", right: "Solo star" },
+  { id: "c151", left: "Easy to watch", right: "Impossible to follow" },
+  { id: "c152", left: "Weekend warrior", right: "Professional athlete" },
+
+  // Holidays and celebrations
+  { id: "c153", left: "Great gift", right: "Regifted immediately" },
+  { id: "c154", left: "Low-key birthday", right: "Huge party" },
+  { id: "c155", left: "Festive", right: "Grinch" },
+  { id: "c156", left: "Thoughtful gesture", right: "Grand gesture" },
+  { id: "c157", left: "Party starter", right: "Party pooper" },
+
+  // Money and shopping
+  { id: "c158", left: "Impulse buy", right: "Researched for months" },
+  { id: "c159", left: "Spend it", right: "Save it" },
+  { id: "c160", left: "Bargain", right: "Rip-off" },
+  { id: "c161", left: "Buy online", right: "Buy in person" },
+  { id: "c162", left: "Brand name", right: "Off brand" },
+
+  // Relationships
+  { id: "c163", left: "Friend", right: "Rival" },
+  { id: "c164", left: "Good first date", right: "Terrible first date" },
+  { id: "c165", left: "Red flag", right: "Green flag" },
+  { id: "c166", left: "Clingy", right: "Distant" },
+  { id: "c167", left: "Romantic", right: "Practical" },
+  { id: "c168", left: "Talks about feelings", right: "Bottles it up" },
+
+  // Fantasy and fiction
+  { id: "c169", left: "Hero's sidekick", right: "Final boss" },
+  { id: "c170", left: "Realistic", right: "Pure fantasy" },
+  { id: "c171", left: "Plot hole", right: "Plot twist" },
+  { id: "c172", left: "Would survive a horror film", right: "First to go" },
+  { id: "c173", left: "Wise mentor", right: "Comic relief" },
+  { id: "c174", left: "Magic power you'd want", right: "Magic power that's a curse" },
+
+  // Science and knowledge
+  { id: "c175", left: "Common knowledge", right: "Niche trivia" },
+  { id: "c176", left: "Simple", right: "Complicated" },
+  { id: "c177", left: "Proven", right: "Just a theory" },
+  { id: "c178", left: "Useful to know", right: "Useless fact" },
+  { id: "c179", left: "Explained to a child", right: "Needs a PhD" },
+
+  // Weather and seasons
+  { id: "c180", left: "Summer thing", right: "Winter thing" },
+  { id: "c181", left: "Nice weather", right: "Miserable weather" },
+  { id: "c182", left: "Indoor activity", right: "Outdoor activity" },
+  { id: "c183", left: "Spring vibes", right: "Autumn vibes" },
+
+  // Smells and senses
+  { id: "c184", left: "Smells amazing", right: "Smells awful" },
+  { id: "c185", left: "Pleasant texture", right: "Upsetting texture" },
+  { id: "c186", left: "Easy on the eyes", right: "Eyesore" },
+  { id: "c187", left: "Sweet", right: "Savoury" },
+  { id: "c188", left: "Crunchy", right: "Mushy" },
+
+  // Jobs and school
+  { id: "c189", left: "Teacher's pet", right: "Class clown" },
+  { id: "c190", left: "Easy subject", right: "Hard subject" },
+  { id: "c191", left: "Dream job", right: "Nightmare job" },
+  { id: "c192", left: "Respected job", right: "Underappreciated job" },
+  { id: "c193", left: "Meeting", right: "Could've been an email" },
+
+  // Personality
+  { id: "c194", left: "Chaotic", right: "Orderly" },
+  { id: "c195", left: "Optimist", right: "Pessimist" },
+  { id: "c196", left: "Brave", right: "Cowardly" },
+  { id: "c197", left: "Humble", right: "Arrogant" },
+  { id: "c198", left: "Mysterious", right: "Open book" },
+  { id: "c199", left: "Patient", right: "Impatient" },
+
+  // Everything else
+  { id: "c200", left: "Overpriced", right: "Underpriced" },
+  { id: "c201", left: "Would fit in a pocket", right: "Needs a truck" },
+  { id: "c202", left: "Short-lived trend", right: "Timeless" },
+  { id: "c203", left: "Hard to say", right: "Easy to say" },
+  { id: "c204", left: "Normal pizza topping", right: "Crime against pizza" },
+  { id: "c205", left: "Good superpower", right: "Lame superpower" },
+  { id: "c206", left: "Nobody's favourite", right: "Everybody's favourite" },
 ];
 
 const CARDS_BY_ID: ReadonlyMap<string, SpectrumCard> = new Map(
