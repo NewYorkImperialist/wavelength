@@ -186,16 +186,25 @@ export interface Wedge {
   readonly to: Position;
 }
 
-/** The five scoring wedges, left to right, for a given target centre. */
+/**
+ * The scoring wedges, left to right, for a given target centre, clipped to
+ * the dial.
+ *
+ * A target near an end hangs off it, so a wedge may come back narrower than
+ * the rest, or not at all. A centred target always has all five.
+ */
 export function targetWedges(center: Position): readonly Wedge[] {
   const { four, three, two } = TARGET_HALF_WIDTH;
-  return [
+  const full: readonly Wedge[] = [
     { points: 2, from: center - two, to: center - three },
     { points: 3, from: center - three, to: center - four },
     { points: 4, from: center - four, to: center + four },
     { points: 3, from: center + four, to: center + three },
     { points: 2, from: center + three, to: center + two },
   ];
+  return full
+    .map((wedge) => ({ ...wedge, from: clamp01(wedge.from), to: clamp01(wedge.to) }))
+    .filter((wedge) => wedge.to > wedge.from);
 }
 
 export function needleLine(

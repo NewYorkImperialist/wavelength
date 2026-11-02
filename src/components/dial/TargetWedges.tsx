@@ -21,6 +21,9 @@ const LABEL_FILL: Record<2 | 3 | 4, string> = {
   4: "fill-white",
 };
 
+/** Narrowest wedge, as a fraction of the dial, that still gets a number. */
+const MIN_LABEL_WIDTH = 0.025;
+
 /** Numbers sit mid-band, rotated so their "up" points away from the pivot. */
 function labelPlacement(wedge: Wedge) {
   const mid = (wedge.from + wedge.to) / 2;
@@ -30,7 +33,8 @@ function labelPlacement(wedge: Wedge) {
 }
 
 /**
- * The 2 / 3 / 4 / 3 / 2 scoring band.
+ * The 2 / 3 / 4 / 3 / 2 scoring band. Near an end of the dial the outer
+ * wedges on that side are cut off.
  *
  * Mounted ONLY when the viewer is entitled to see the target. Non-psychics do
  * not render it at all — never hidden with opacity, visibility or a class,
@@ -93,6 +97,9 @@ export function TargetWedges({
       )}
 
       {wedges.map((wedge, index) => {
+        // A wedge trimmed by the end of the dial can be too thin to hold its
+        // number; the colour still says what it is worth.
+        if (wedge.to - wedge.from < MIN_LABEL_WIDTH) return null;
         const { x, y, rotation } = labelPlacement(wedge);
         return (
           <text

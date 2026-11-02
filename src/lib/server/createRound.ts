@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, randomBytes, randomInt } from "node:crypto";
 
-import { POSITION_STEPS, TARGET_HALF_STEPS } from "@/lib/game/constants";
+import { sampleTargetSteps } from "@/lib/game/target";
 
 import { all, newId, one, run, transaction } from "./db";
 import { ApiError } from "./errors";
@@ -16,13 +16,15 @@ import type { DbTeam } from "./guards";
  * commitment to it, so no query of rounds can carry the secret.
  */
 
-/** Steps at which the whole 2/3/4/3/2 band still fits on the dial. */
-const MIN_CENTER_STEPS = TARGET_HALF_STEPS.two;
-const MAX_CENTER_STEPS = POSITION_STEPS - TARGET_HALF_STEPS.two;
+/** A CSPRNG uniform in [0, 1), with 48 bits of resolution. */
+function secureUniform(): number {
+  // randomInt's bound is exclusive and must be below 2^48.
+  return randomInt(2 ** 48 - 1) / (2 ** 48 - 1);
+}
 
 /**
  * sha256(nonce || target). A 16-byte random nonce makes this infeasible to
- * brute-force even though the target has only ~1750 possible values, so
+ * brute-force even though the target has only ~1900 possible values, so
  * publishing it leaks nothing — but it lets a client prove afterwards that the
  * server did not move the target once it had seen the needle.
  */
@@ -42,7 +44,7 @@ export function commitToTarget(
  * predictable from a seed, a timestamp, or the round's own id.
  */
 export function generateTargetSteps(): number {
-  return randomInt(MIN_CENTER_STEPS, MAX_CENTER_STEPS + 1);
+  return sampleTargetSteps(secureUniform);
 }
 
 interface SeatRow {

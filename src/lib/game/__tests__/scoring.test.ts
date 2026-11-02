@@ -53,10 +53,11 @@ describe("scoreNeedle", () => {
     }
   });
 
-  it("keeps the whole band on the dial at the extreme target positions", () => {
-    // If target generation let the band hang off the edge, these would be 0.
-    expect(scoreNeedle(TARGET_MIN_CENTER, 0)).toBe(2);
-    expect(scoreNeedle(TARGET_MAX_CENTER, 1)).toBe(2);
+  it("keeps the 4-wedge reachable at the extreme target positions", () => {
+    // The band may hang off the end, but the bullseye never does: a needle
+    // pinned to the end still scores 4.
+    expect(scoreNeedle(TARGET_MIN_CENTER, 0)).toBe(4);
+    expect(scoreNeedle(TARGET_MAX_CENTER, 1)).toBe(4);
   });
 
   it("survives float arithmetic that would break an epsilon comparison", () => {

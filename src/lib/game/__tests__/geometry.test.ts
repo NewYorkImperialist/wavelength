@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
-import { PIVOT, POSITION_STEPS, RADII, TARGET_SPAN } from "../constants";
+import {
+  PIVOT,
+  POSITION_STEPS,
+  RADII,
+  TARGET_HALF_WIDTH,
+  TARGET_SPAN,
+} from "../constants";
 import {
   angleToPosition,
   clamp01,
@@ -206,6 +212,40 @@ describe("targetWedges", () => {
     const widths = wedges.map((w) => w.to - w.from);
     for (const width of widths) {
       expect(width).toBeCloseTo(widths[0]!, 12);
+    }
+  });
+});
+
+describe("targetWedges at the edge of the dial", () => {
+  const { four, three } = TARGET_HALF_WIDTH;
+
+  it("drops the wedges that fall off the dial entirely", () => {
+    const wedges = targetWedges(four);
+    expect(wedges.map((w) => w.points)).toEqual([4, 3, 2]);
+    expect(wedges[0]!.from).toBe(0);
+  });
+
+  it("does the same at the right-hand end", () => {
+    const wedges = targetWedges(1 - four);
+    expect(wedges.map((w) => w.points)).toEqual([2, 3, 4]);
+    expect(wedges[wedges.length - 1]!.to).toBe(1);
+  });
+
+  it("trims a wedge that only partly hangs off", () => {
+    const center = (four + three) / 2;
+    const wedges = targetWedges(center);
+    expect(wedges.map((w) => w.points)).toEqual([3, 4, 3, 2]);
+    expect(wedges[0]!.from).toBe(0);
+    expect(wedges[0]!.to).toBeCloseTo(center - four, 12);
+  });
+
+  it("never leaves the dial", () => {
+    for (let c = 0; c <= 1; c += 0.01) {
+      for (const w of targetWedges(c)) {
+        expect(w.from).toBeGreaterThanOrEqual(0);
+        expect(w.to).toBeLessThanOrEqual(1);
+        expect(w.to).toBeGreaterThan(w.from);
+      }
     }
   });
 });

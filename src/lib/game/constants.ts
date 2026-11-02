@@ -99,6 +99,16 @@ export const TARGET_HALF_WIDTH = {
 /** Total width of the target, edge to edge. */
 export const TARGET_SPAN = 2 * TARGET_HALF_WIDTH.two;
 
+/**
+ * How tightly targets cluster toward the ends of the dial: the standard
+ * deviation, as a fraction of the dial, of the half-normal curve each end
+ * gets. Smaller pushes targets harder toward the ends.
+ *
+ * At 0.25 a target near the very end is about three times as likely as one
+ * dead centre. Raise it to flatten the curve, lower it to steepen it.
+ */
+export const TARGET_EDGE_SPREAD = 0.25;
+
 // ---------------------------------------------------------------------------
 // Keyboard control of the needle
 // ---------------------------------------------------------------------------
