@@ -18,6 +18,19 @@ days by default; `fly volumes snapshots list <volume-id>` shows them.
 
 Then `fly deploy`. There are no secrets and no build arguments.
 
+## Automatic deploys
+
+`.github/workflows/deploy.yml` runs `pnpm check` and then `fly deploy` on
+every push to `main` (and on demand from the Actions tab). It needs one
+repository secret, `FLY_API_TOKEN`, under Settings → Secrets and variables →
+Actions. Make it with:
+
+```bash
+fly tokens create deploy -a wave-length
+```
+
+A failing check stops the deploy, so the live site keeps the last good build.
+
 ## Exactly one machine
 
 A volume belongs to a single machine, so a second machine would get its own,

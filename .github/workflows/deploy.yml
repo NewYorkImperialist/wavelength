@@ -1,0 +1,39 @@
+# Deploy to Fly.io on every push to main, after the checks pass.
+#
+# Needs one repository secret, FLY_API_TOKEN: a deploy token scoped to the
+# app, made with `fly tokens create deploy -a wave-length`.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time. The app is a single machine with a volume, so two
+# overlapping deploys would just fight over it; a newer push waits its turn.
+concurrency:
+  group: deploy-fly
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
