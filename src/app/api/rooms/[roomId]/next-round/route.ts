@@ -2,6 +2,7 @@ import { createRound } from "@/lib/server/createRound";
 import { notifyRoom } from "@/lib/server/broadcast";
 import { nowIso, one, run, transaction } from "@/lib/server/db";
 import { ApiError, handleRoute } from "@/lib/server/errors";
+import { roomWinners } from "@/lib/server/freeForAll";
 import type { DbTeam } from "@/lib/server/guards";
 import { requireActor } from "@/lib/server/session";
 
@@ -29,7 +30,7 @@ export async function POST(
         roomId,
       );
       if (game === null) throw new ApiError("CONFLICT", "There is no game in progress.");
-      if (game.winner !== null) throw new ApiError("CONFLICT", "The game is over.");
+      if (game.winner !== null || roomWinners(roomId).length > 0) throw new ApiError("CONFLICT", "The game is over.");
       if (game.current_round_id === null) {
         throw new ApiError("CONFLICT", "No round to advance from.");
       }

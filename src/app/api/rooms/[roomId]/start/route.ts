@@ -42,6 +42,10 @@ export async function POST(
       );
       if (started === 0) throw new ApiError("CONFLICT", "The game has already started.");
 
+      // A fresh game starts everyone from zero, whatever an earlier game in
+      // this room left behind.
+      run("update players set score = 0 where room_id = ?", roomId);
+
       // Everyone sits on one side; the round machinery still wants a team.
       const startingTeam = "a" as const;
       const gameId = newId();

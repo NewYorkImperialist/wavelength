@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { freeForAllWinners } from "@/lib/game/free-for-all";
 import { WavelengthDial } from "@/components/dial/WavelengthDial";
 import type { GuessMarker } from "@/components/dial/GuessMarkers";
 import { Leaderboard, type LeaderboardRow } from "@/components/game/Leaderboard";
@@ -166,7 +167,9 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
     };
   });
 
-  const winner = state.players.find((p) => p.score >= state.room.winningScore);
+  // Crossing the winning score ends the game; the highest score wins it.
+  const winnerIds = freeForAllWinners(state.players, state.room.winningScore);
+  const winners = state.players.filter((p) => winnerIds.includes(p.id));
 
   return (
     <main
@@ -230,7 +233,7 @@ export function RoomClient({ initial }: { initial: RoomStateDto }) {
           iHaveGuessed={iHaveGuessed}
           canGuess={canGuess}
           revealed={revealed}
-          winner={winner ?? null}
+          winners={winners}
           busy={busy}
           myNeedle={myNeedle}
           onSubmitClue={(clue) => void call(`/api/rounds/${round.id}/clue`, { clue })}

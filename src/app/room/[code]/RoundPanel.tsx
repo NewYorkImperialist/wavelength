@@ -13,7 +13,8 @@ export interface RoundPanelProps {
   iHaveGuessed: boolean;
   canGuess: boolean;
   revealed: boolean;
-  winner: { id: string; displayName: string; score: number } | null;
+  /** Empty while the game goes on; more than one when tied on the top score. */
+  winners: readonly { id: string; displayName: string; score: number }[];
   busy: boolean;
   myNeedle: number;
   onSubmitClue: (clue: string) => void;
@@ -71,19 +72,23 @@ function SkipCardVote({
 
 /** What you see depends only on your role and the phase. */
 export function RoundPanel(props: RoundPanelProps) {
-  const { state, round, isPsychic, iHaveGuessed, canGuess, revealed, winner, busy } = props;
+  const { state, round, isPsychic, iHaveGuessed, canGuess, revealed, winners, busy } = props;
   const [clue, setClue] = useState("");
 
   const psychicName =
     state.players.find((p) => p.id === round.psychicPlayerId)?.displayName ?? "someone";
 
   // ---- game over ---------------------------------------------------------
-  if (revealed && winner !== null) {
+  if (revealed && winners.length > 0) {
     return (
       <Panel>
-        <p className="text-sm uppercase tracking-widest text-stone-400">Winner</p>
-        <p className="mt-1 text-4xl font-bold text-white">{winner.displayName}</p>
-        <p className="mt-2 text-stone-400">{winner.score} points</p>
+        <p className="text-sm uppercase tracking-widest text-stone-400">
+          {winners.length === 1 ? "Winner" : "Tied for the win"}
+        </p>
+        <p className="mt-1 text-4xl font-bold text-white">
+          {winners.map((w) => w.displayName).join(" & ")}
+        </p>
+        <p className="mt-2 text-stone-400">{winners[0]?.score} points</p>
         {state.me.isHost ? (
           <button
             type="button"

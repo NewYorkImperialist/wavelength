@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
 import { POSITION_STEPS, TARGET_HALF_STEPS } from "../constants";
-import { scoreFreeForAllRound } from "../free-for-all";
+import { freeForAllWinners, scoreFreeForAllRound } from "../free-for-all";
 import { scoreNeedle } from "../scoring";
 
 const step = (n: number) => n / POSITION_STEPS;
@@ -129,5 +129,42 @@ describe("the widened target", () => {
     expect(scoreNeedle(0.5, 0.6)).toBe(2);
     // Only a genuinely wrong answer scores zero.
     expect(scoreNeedle(0.5, 0.9)).toBe(0);
+  });
+});
+
+describe("free-for-all winners", () => {
+  it("names nobody until someone reaches the winning score", () => {
+    expect(freeForAllWinners([{ id: "a", score: 24 }, { id: "b", score: 10 }], 25)).toEqual([]);
+    expect(freeForAllWinners([], 25)).toEqual([]);
+  });
+
+  it("gives it to the highest score when several cross the line together", () => {
+    const players = [
+      { id: "first", score: 26 },
+      { id: "highest", score: 29 },
+      { id: "short", score: 20 },
+    ];
+    expect(freeForAllWinners(players, 25)).toEqual(["highest"]);
+  });
+
+  it("shares the win between players level on the top score", () => {
+    const players = [
+      { id: "a", score: 27 },
+      { id: "b", score: 27 },
+      { id: "c", score: 25 },
+    ];
+    expect(freeForAllWinners(players, 25)).toEqual(["a", "b"]);
+  });
+
+  it("picks the highest regardless of seat order", () => {
+    fc.assert(
+      fc.property(fc.array(fc.nat({ max: 60 }), { minLength: 1, maxLength: 10 }), (scores) => {
+        const players = scores.map((score, i) => ({ id: `p${i}`, score }));
+        const winners = freeForAllWinners(players, 25);
+        const best = Math.max(...scores);
+        if (best < 25) return winners.length === 0;
+        return winners.length > 0 && winners.every((id) => players.find((p) => p.id === id)!.score === best);
+      }),
+    );
   });
 });

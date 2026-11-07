@@ -55,3 +55,27 @@ export function scoreFreeForAllRound(
     { playerId: psychicId, points: psychicPoints, position: null, isPsychic: true },
   ];
 }
+
+export interface Standing {
+  readonly id: PlayerId;
+  readonly score: number;
+}
+
+/**
+ * Who has won, if anyone.
+ *
+ * Reaching the winning score ends the game at the end of that round, but it
+ * does not decide who won: everyone scores every round, so several players can
+ * cross the line together, and the highest score among them takes it. Players
+ * level on the top score share the win.
+ *
+ * Empty while nobody has reached the winning score, i.e. the game goes on.
+ */
+export function freeForAllWinners(
+  players: readonly Standing[],
+  winningScore: number,
+): PlayerId[] {
+  const best = Math.max(...players.map((player) => player.score));
+  if (players.length === 0 || best < winningScore) return [];
+  return players.filter((player) => player.score === best).map((player) => player.id);
+}

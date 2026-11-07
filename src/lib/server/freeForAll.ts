@@ -1,7 +1,7 @@
 import "server-only";
 
 import { POSITION_STEPS } from "@/lib/game/constants";
-import { scoreFreeForAllRound, type Guess } from "@/lib/game/free-for-all";
+import { freeForAllWinners, scoreFreeForAllRound, type Guess } from "@/lib/game/free-for-all";
 
 import { all, nowIso, one, run, transaction } from "./db";
 import { ApiError } from "./errors";
@@ -84,4 +84,24 @@ export function revealFreeForAll(input: {
 
     return { revealed: true };
   });
+}
+
+/**
+ * The room's free-for-all winners, if the game is over; empty while it goes on.
+ *
+ * Read from the players' running scores, which only change at a reveal, so
+ * this is settled the moment the deciding round is revealed. Players who have
+ * left are not counted, matching the leaderboard everyone sees.
+ */
+export function roomWinners(roomId: string): string[] {
+  const room = one<{ winning_score: number }>(
+    "select winning_score from rooms where id = ?",
+    roomId,
+  );
+  if (room === null) return [];
+  const players = all<{ id: string; score: number }>(
+    "select id, score from players where room_id = ? and left_at is null",
+    roomId,
+  );
+  return freeForAllWinners(players, room.winning_score);
 }

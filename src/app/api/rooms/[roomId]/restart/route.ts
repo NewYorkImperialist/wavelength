@@ -1,6 +1,7 @@
 import { notifyRoom } from "@/lib/server/broadcast";
 import { nowIso, one, run, transaction } from "@/lib/server/db";
 import { ApiError, handleRoute } from "@/lib/server/errors";
+import { roomWinners } from "@/lib/server/freeForAll";
 import { assertHost } from "@/lib/server/guards";
 import { requireActor } from "@/lib/server/session";
 
@@ -32,7 +33,11 @@ export async function POST(
         roomId,
       );
       if (game === null) throw new ApiError("CONFLICT", "There is no game to replay.");
-      if (game.winner === null && game.status === "in_game") {
+      // Online games are free-for-all, which never sets the team `winner`
+      // column: the game is over once somebody has reached the winning score.
+      const over =
+        game.status !== "in_game" || game.winner !== null || roomWinners(roomId).length > 0;
+      if (!over) {
         throw new ApiError("CONFLICT", "That game is still in progress.");
       }
 
@@ -50,6 +55,10 @@ export async function POST(
         now,
         roomId,
       );
+
+      // Scores belong to a game, not to the person: everyone starts the next
+      // one from zero.
+      run("update players set score = 0 where room_id = ?", roomId);
     });
 
     notifyRoom(roomId, "restarted");
